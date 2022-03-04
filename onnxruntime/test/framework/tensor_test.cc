@@ -147,7 +147,7 @@ TEST(TensorTest, EmptyTensorTest) {
 }
 
 TEST(TensorTest, StringTensorTest) {
-//add scope to explicitly delete tensor
+// add scope to explicitly delete tensor
 #ifdef _MSC_VER
   std::string* string_ptr = nullptr;
 #else
@@ -210,6 +210,7 @@ TEST(TensorTest, SizeOverflow) {
   EXPECT_THROW(t.SizeInBytes(), OnnxRuntimeException);
 }
 
+#ifdef ENABLE_TRAINING
 TEST(TensorTest, Strided) {
   TensorShape shape({2, 3, 4});
   auto alloc = TestCPUExecutionProvider()->GetAllocator(0, OrtMemTypeDefault);
@@ -230,6 +231,6 @@ TEST(TensorTest, Strided) {
   ASSERT_THAT(t2.Strides(), testing::ContainerEq(gsl::make_span(strides.cbegin(), strides.cend())));
   alloc->Free(data);
 }
-
+#endif
 }  // namespace test
 }  // namespace onnxruntime

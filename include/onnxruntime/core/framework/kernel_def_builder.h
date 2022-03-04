@@ -90,8 +90,10 @@ class KernelDef {
 
   bool HasExternalOutputs() const { return external_outputs_; }
 
+#ifdef ENABLE_TRAINING
   const std::vector<int>& MayStridedInput() const { return may_strided_inputs_; }
   const std::vector<std::pair<int, int>>& MayStridedOutput() const { return may_strided_output_map_; }
+#endif
 
   OrtMemType OutputMemoryType(size_t output_index) const {
     auto it = output_memory_type_args_.find(output_index);

@@ -250,6 +250,7 @@ class Tensor final {
   */
   size_t SizeInBytes() const;
 
+#ifdef ENABLE_TRAINING
   /**
    * Get the strides of the tensor.
    */
@@ -264,6 +265,7 @@ class Tensor final {
    * Set strides.
    */
   void SetStrides(const TensorShapeVector& new_strides);
+#endif
 
   // More API methods.
  private:
@@ -276,7 +278,9 @@ class Tensor final {
 
   void ReleaseBuffer();
 
+#ifdef ENABLE_TRAINING
   bool CheckIsContiguous() const;
+#endif
 
   void* p_data_;
   /**

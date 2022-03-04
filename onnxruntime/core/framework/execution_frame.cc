@@ -275,7 +275,7 @@ void IExecutionFrame::Init(const std::vector<int>& feed_mlvalue_idxs, const std:
                                                                 *dest.GetMutable<SparseTensor>()));
       } else {
 #else
-        ORT_UNUSED_PARAMETER(is_initializer_sparse_func);
+      ORT_UNUSED_PARAMETER(is_initializer_sparse_func);
 #endif  //  !defined(DISABLE_SPARSE_TENSORS)
         if (!dest.IsAllocated()) {
           // NOTE: This doesn't need to support ExecutionFrame custom allocators as they only come into play
@@ -380,7 +380,7 @@ ExecutionFrame::ExecutionFrame(const std::vector<int>& feed_mlvalue_idxs, const 
       }
     }
 
-    //if there are some traditional ml value type in inputs disable the memory pattern optimization.
+    // if there are some traditional ml value type in inputs disable the memory pattern optimization.
     if (all_tensors) {
       mem_patterns_ = session_state.GetMemoryPatternGroup(feeds, feed_mlvalue_idxs, inferred_shapes_);
       // if no existing patterns, generate one in this executionframe
@@ -433,7 +433,7 @@ ExecutionFrame::ExecutionFrame(const std::vector<int>& feed_mlvalue_idxs, const 
               buffers_[location] = BufferUniquePtr(buffer, alloc);
             }
 #if !defined(ORT_MINIMAL_BUILD) && defined(ORT_MEMORY_PROFILE)
-            //Record activation memory pattern
+            // Record activation memory pattern
             MemoryInfo::ClearMemoryInfoPerExecution();
             if (mem_patterns_ && buffer != nullptr) {
               MemoryInfo::RecordPatternInfo(*mem_patterns_, MemoryInfo::MapType::StaticActivation);
@@ -536,7 +536,7 @@ Status ExecutionFrame::AllocateMLValueTensorSelfOwnBufferHelper(OrtValue& ort_va
     }
   }
 
-  //no memory pattern, or the pattern is not correct.
+  // no memory pattern, or the pattern is not correct.
   if (!alloc) alloc = GetAllocator(location);
   Tensor::InitOrtValue(element_type, shape, std::move(alloc), ort_value);
 
@@ -593,9 +593,6 @@ Status ExecutionFrame::AllocateMLValueTensorPreAllocateBuffer(OrtValue& ort_valu
   }
 
   void* reuse_buffer = reuse_tensor->MutableDataRaw();
-  gsl::span<const int64_t> strides =
-      reuse_tensor->IsContiguous() ? gsl::span<const int64_t>() : reuse_tensor->Strides();
-
   // create fence on reused ort_value if needed
   // TODO: differentiate reuse and alias, by add AllocKind::kAlias?
   if (create_fence && ort_value_reuse.Fence() == nullptr) {
@@ -605,7 +602,14 @@ Status ExecutionFrame::AllocateMLValueTensorPreAllocateBuffer(OrtValue& ort_valu
 
   // reused OrtValue share the same fence
   ort_value.ShareFenceWith(ort_value_reuse);
+
+#ifdef ENABLE_TRAINING
+  gsl::span<const int64_t> strides =
+      reuse_tensor->IsContiguous() ? gsl::span<const int64_t>() : reuse_tensor->Strides();
   return AllocateTensorWithPreAllocateBufferHelper(ort_value, reuse_buffer, element_type, location, shape, strides);
+#else
+  return AllocateTensorWithPreAllocateBufferHelper(ort_value, reuse_buffer, element_type, location, shape);
+#endif
 }
 
 Status ExecutionFrame::AllocateTensorWithPreAllocateBufferHelper(OrtValue& ort_value, void* pBuffer,
