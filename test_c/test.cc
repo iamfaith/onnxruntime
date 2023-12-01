@@ -4,7 +4,7 @@
 #include <vector>
 #include <assert.h>
 
-// g++ test.cc -L`pwd` -lonnxruntime
+// g++ test.cc -L`pwd` -lonnxruntime && ./a.out
 // sudo ldconfig -p | grep onnxsh
 // https://zhuanlan.zhihu.com/p/513777076
 int main(void) {

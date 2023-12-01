@@ -24,7 +24,87 @@ python tools/python/convert_onnx_models_to_ort.py /home/faith/AI_baili_train/bes
 https://blog.csdn.net/qq_41182465/article/details/130901506
 
 --- mini
-./build.sh --config=MinSizeRel --build_shared_lib --parallel --minimal_build --disable_ml_ops --disable_exceptions --disable_rtti --skip_tests --include_ops_by_config /home/faith/AI_baili_train/best5000-sim.required_operators.with_runtime_opt.config
+./build.sh --config=MinSizeRel --build_shared_lib --parallel 16 --minimal_build --disable_ml_ops --disable_exceptions --disable_rtti --skip_tests --include_ops_by_config /home/faith/AI_baili_train/best5000-sim.required_operators.with_runtime_opt.config
+
+
+重新build的话需要： --update --build
+./build.sh --arm --config=MinSizeRel --build_shared_lib --parallel 16 --minimal_build --disable_ml_ops --disable_exceptions --disable_rtti --skip_tests --include_ops_by_config /home/faith/AI_baili_train/best5000-sim.required_operators.with_runtime_opt.config --update --build --build_dir build/x86
+
+
+# cross compile
+https://github.com/PINTO0309/onnxruntime4raspberrypi
+
+1. docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+2. docker run --rm -it \
+-v ${PWD}:/workdir \
+pinto0309/raspios_lite_armhf:2021-03-04_buster \
+/bin/bash
+
+
+https://github.com/lukechilds/dockerpi/issues/6
+
+sudo systemctl enable ssh
+sudo systemctl start ssh
+
+docker run --rm -it \
+-v ${PWD}:/sdcard/boot/onnxruntime \
+-p 5022:22 \
+lukechilds/dockerpi
+
+
+3. apt install -y protobuf-compiler libcurl4-openssl-dev \
+libatlas-base-dev git wget make python3-pip cmake
+
+python3 -m pip install flatbuffers
+python3 -m pip install -r requirements-dev.txt
+
+fatal: detected dubious ownership in repository at '/home/faith/onnxruntime':
+git config --global --add safe.directory '*'
+
+CMake 3.26 or higher is required.  You are running version 3.16.3:
+Enable the arm64 architecture (this matches aarch64):
+python3 -m pip install cmake
+
+4. ./build.sh --arm --config=MinSizeRel --build_shared_lib --parallel 16 --minimal_build --disable_ml_ops --disable_exceptions --disable_rtti --skip_tests --include_ops_by_config best5000-sim.required_operators.with_runtime_opt.config --allow_running_as_root --update --build
+
+native:
+./build.sh --config=MinSizeRel --build_shared_lib --parallel 16 --minimal_build --disable_ml_ops --disable_exceptions --disable_rtti --skip_tests --include_ops_by_config best5000-sim.required_operators.with_runtime_opt.config --allow_running_as_root
+
+
+--skip_submodule_sync  no sync
+
+
+build for arm:
+https://github.com/microsoft/onnxruntime/issues/2684
+To Reproduce
+
+sudo apt-get update
+sudo apt-get install -y \
+    sudo \
+    build-essential \
+    curl \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    wget \
+    python3 \
+    python3-pip \
+    python3-dev \
+    git \
+    tar
+pip3 install --upgrade pip
+pip3 install --upgrade setuptools
+pip3 install --upgrade wheel
+pip3 install numpy
+cd /code
+git clone --recursive https://github.com/Microsoft/onnxruntime
+
+cd /code/onnxruntime
+./build.sh --config MinSizeRel --arm --update --build
+
+
+
+
+docker run --rm -it -v $PWD:/home/faith/onnxruntime cross-stretch bash
 
 
 根据我从网络上搜索到的信息，编译的时候可以使用以下命令来引用libonnxruntime.so文件：
@@ -117,3 +197,67 @@ Source: Conversation with Bing, 2023/11/30
 (11) undefined. https://github.com/microsoft/onnxruntime/blob/rel-1.9.0/docs/ContribOperators.md.
 (12) undefined. https://github.com/microsoft/onnxruntime/blob/rel-1.8.0/docs/ContribOperators.md.
 (13) undefined. https://github.com/microsoft/onnxruntime/blob/rel-1.7.0/docs/ContribOperators.md.
+
+
+
+
+
+
+
+# contrib_ops
+
+您好，这是Bing。我可以帮您了解onnxruntime_DISABLE_CONTRIB_OPS这个参数的作用和contrib_ops包含了什么。😊
+
+根据我从网络上搜索到的信息，onnxruntime_DISABLE_CONTRIB_OPS这个参数是用来控制是否编译contrib_ops域中的运算符的。¹²
+
+contrib_ops域中包含了一些默认内置在运行时中的运算符，它们是为了满足一些特定的需求而添加的，但是并不是标准的ONNX运算符。¹²
+
+只有一些被选中的运算符才会被添加到contrib_ops域中，以避免增加核心运行时包的二进制大小。¹²
+
+如果可能的话，应该使用自定义运算符来实现特殊的功能。¹²
+
+contrib_ops域中包含了以下运算符：³
+
+- Attention
+- BiasGelu
+- BiasSoftmax
+- ConvTransposeWithDynamicPads
+- DynamicQuantizeLSTM
+- EmbedLayerNormalization
+- FastGelu
+- GatherND
+- Gelu
+- LayerNormalization
+- LongformerAttention
+- MatMulInteger16
+- MurmurHash3
+- QLinearConv
+- QLinearMatMul
+- QLinearSigmoid
+- QLinearLeakyRelu
+- QLinearAdd
+- QLinearMul
+- QLinearAveragePool
+- QLinearGlobalAveragePool
+- QLinearReduceMean
+- QLinearActivation
+- QAttention
+- QuantizeLinear
+- Range
+- SkipLayerNormalization
+- SoftmaxCrossEntropyLoss
+- SparseToDense
+- StringNormalizer
+- Tokenizer
+- TransposeMatMul
+- Unique
+- WordConvEmbedding
+
+如果您想编译onnxruntime时不包含contrib_ops域中的运算符，您需要在CMakeLists.txt文件中添加一行set(onnxruntime_DISABLE_CONTRIB_OPS ON)。¹²
+
+希望这些信息能够帮助您理解onnxruntime_DISABLE_CONTRIB_OPS这个参数的作用和contrib_ops包含了什么。如果您还有其他问题，欢迎继续与我交流。😊
+
+Source: Conversation with Bing, 12/1/2023
+(1) Contrib operators | onnxruntime. https://onnxruntime.ai/docs/reference/operators/ContribOperators.html.
+(2) Contrib Ops · microsoft/onnxruntime Wiki · GitHub. https://github.com/microsoft/onnxruntime/wiki/Contrib-Ops.
+(3) Contrib Operator Schemas - GitHub: Let’s build from here. https://github.com/microsoft/onnxruntime/blob/main/docs/ContribOperators.md.
