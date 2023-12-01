@@ -19,7 +19,7 @@ static inline uint64_t time_get(void)
 // 2. export LD_LIBRARY_PATH=`pwd`
 // 3. gcc file1.o file2.o /usr/lib/libonnxruntime.so.1.17.0 -o myapp3
 
-// g++ test.cc -L`pwd` -lonnxruntime && ./a.out
+// g++ -O3 test.cc -L`pwd` -lonnxruntime && ./a.out
 // sudo ldconfig -p | grep onnxsh
 // https://zhuanlan.zhihu.com/p/513777076
 int main(void) {
@@ -32,7 +32,10 @@ int main(void) {
 
   // initialize session options if needed
   Ort::SessionOptions session_options;
-  session_options.SetIntraOpNumThreads(1);
+  session_options.SetIntraOpNumThreads(4);
+
+  // session_options.SetIntraOpNumThreads(std::min(6, (int) std::thread::hardware_concurrency()));
+  session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
   // If onnxruntime.dll is built with CUDA enabled, we can uncomment out this line to use CUDA for this
   // session (we also need to include cuda_provider_factory.h above which defines it)

@@ -47,8 +47,12 @@ lease -Dprotobuf_WITH_ZLIB=OFF  -Donnxruntime_ENABLE_PYTHON=OFF -Donnxruntime_BU
 
 or
 
-5.
+5. not good
 ./build.sh --config=MinSizeRel --build_shared_lib --parallel 16 --minimal_build --disable_ml_ops --disable_exceptions --disable_rtti --skip_tests --include_ops_by_config /home/faith/AI_baili_train/best5000-sim.required_operators.with_runtime_opt.config --build_dir arm_build --cmake_extra_defines CMAKE_TOOLCHAIN_FILE=/home/faith/onnxruntime/cmake/aarch64.cmake
+
+
+remove minimal_build:（python tools/python/create_reduced_build_config.py /home/faith/AI_baili_train/best5000-sim.onnx）Best worable!!!!!!
+./build.sh --config=Release --build_shared_lib --parallel 16 --disable_ml_ops --disable_exceptions --disable_rtti --skip_tests --include_ops_by_config /home/faith/AI_baili_train/best5000-sim.required_operators.config --build_dir arm_build --cmake_extra_defines CMAKE_TOOLCHAIN_FILE=/home/faith/onnxruntime/cmake/aarch64.cmake
 
 
 
