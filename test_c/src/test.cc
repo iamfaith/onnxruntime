@@ -211,22 +211,21 @@ int main(void) {
   // assert(input_tensor.IsTensor());
   //////////////////////////////////////////fake data
 
-  char* imagepath = "/home/faith/AI_baili_train/images/20.png";
+  char* imagepath = "/home/faith/AI_baili_train/images/22.png";
   cv::Mat image = cv::imread(imagepath, 1);
-  cv::Mat resizedImage;
+  cv::Mat resizedImage, m;
 #if (CV_VERSION_MAJOR >= 4)
-  cv::cvtColor(image, resizedImage, cv::COLOR_BGR2RGB);
+  cv::cvtColor(image, m, cv::COLOR_BGR2RGB);
 #else
-  cv::cvtColor(image, resizedImage, CV_BGR2RGB);
+  cv::cvtColor(image, m, CV_BGR2RGB);
 #endif
 
   cv::Mat floatImage;
-  cv::Size inputImageShape = cv::Size(384, 768);
+  cv::Size inputImageShape = cv::Size(768, 768);
   bool isDynamicInputShape = false;
 
-  utils::letterbox(resizedImage, resizedImage, cv::Size2f(inputImageShape),
-                   cv::Scalar(114, 114, 114), isDynamicInputShape,
-                   false, true, 32);
+  utils::letterbox(m, resizedImage, cv::Size2f(inputImageShape),
+                   cv::Scalar(114, 114, 114), true, false, true, 32);
 
   // inputTensorShape[2] = resizedImage.rows;
   // inputTensorShape[3] = resizedImage.cols;
@@ -256,6 +255,11 @@ int main(void) {
       memoryInfo, inputTensorValues.data(), inputTensorSize,
       inputTensorShape.data(), inputTensorShape.size()));
 
+  // for (int i = 0; i < 30; i++) {
+  //   int offset = 100 * 768 + 500;
+  //   std::cout << inputTensorValues[i + offset] << " ";
+  // }
+
   int times = 10;
   int loop = times;
   double avg = 0;
@@ -267,7 +271,7 @@ int main(void) {
     auto output_tensors = session.Run(Ort::RunOptions{nullptr}, input_node_names.data(), input_tensor.data(), 1, output_node_names.data(), 1);
 
     cv::Size resizedShape = cv::Size((int)inputTensorShape[3], (int)inputTensorShape[2]);
-    const float confThreshold = 0.25;
+    const float confThreshold = 0.55;
     const float iouThreshold = 0.45;
     std::vector<Detection> detections = postprocessing(resizedShape,
                                      image.size(),

@@ -9,10 +9,15 @@ message(STATUS "CMAKE_CURRENT_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 # set_source_files_properties(${PROJECT_NAME}.cc PROPERTIES LANGUAGE CXX )
+# set(LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}) #code as library
+
+aux_source_directory(src src)
+message(STATUS "src:  ${src}")
 # Add an executable
-add_executable(${PROJECT_NAME}
-                            src/${PROJECT_NAME}.cc
-                            src/utils.cc)
+add_executable(${PROJECT_NAME} ${src})
+# add_executable(${PROJECT_NAME}
+#                             src/${PROJECT_NAME}.cc
+#                             src/utils.cc)
 
 find_package(OpenCV QUIET COMPONENTS opencv_world)
 # for opencv 2.4 on ubuntu 16.04, there is no opencv_world but OpenCV_FOUND will be TRUE
@@ -57,6 +62,7 @@ if(OpenCV_FOUND)
 
     # target_include_directories(${PROJECT_NAME} PRIVATE ${OpenCV_INCLUDE_DIRS})
 
+    # target_link_options(${PROJECT_NAME} PRIVATE -static)
     target_link_libraries(${PROJECT_NAME} PRIVATE ${OpenCV_LIBS} ${ONNXRUNTIME_LIBRARY} opencv_dnn)
 else()
     # target_compile_definitions(${name} PUBLIC USE_NCNN_SIMPLEOCV)
@@ -66,6 +72,23 @@ else()
     #     monnx m ocv
     # )
 endif()
+
+
+install(TARGETS ${PROJECT_NAME}
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION bin)
+
+
+# Include the CPack module
+include(CPack)
+
+# Set the CPack generator to ZIP
+set(CPACK_GENERATOR ZIP)
+
+# Set some CPack variables for the package metadata
+set(CPACK_PACKAGE_NAME "Yolo")
+set(CPACK_PACKAGE_VERSION "1.0.0")
+set(CPACK_PACKAGE_DESCRIPTION "A simple C++ application with a dynamic library dependency")
 
 
 

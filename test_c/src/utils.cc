@@ -3,7 +3,7 @@
 std::ostream& operator<<(std::ostream& os, const Detection& d) {
   os << "Class ID: " << d.classId << "\n";
   os << "Confidence: " << d.conf << "\n";
-  os << "Box: " << d.box << "\n";
+  os << "Box: " << d.box.x << " " << d.box.y << " " << d.box.x + d.box.width << " " << d.box.y + d.box.height << "\n";
   return os;
 }
 
