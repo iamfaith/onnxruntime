@@ -1,4 +1,6 @@
 cmake-*
+*_build/
+_deps/
 # build, distribute, and bins (+ python proto bindings)
 build
 build_*/

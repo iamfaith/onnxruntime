@@ -3,6 +3,21 @@
 #include <iostream>
 #include <vector>
 #include <assert.h>
+#include <sys/time.h>
+
+static inline uint64_t time_get(void)
+{
+    struct timeval tv;
+
+    gettimeofday(&tv, 0);
+    return (uint64_t)(tv.tv_sec * 1000000000ULL + tv.tv_usec * 1000);
+}
+
+
+
+// 1. sudo ldconfig -v|grep onnx   check so
+// 2. export LD_LIBRARY_PATH=`pwd`
+// 3. gcc file1.o file2.o /usr/lib/libonnxruntime.so.1.17.0 -o myapp3
 
 // g++ test.cc -L`pwd` -lonnxruntime && ./a.out
 // sudo ldconfig -p | grep onnxsh
@@ -39,7 +54,7 @@ int main(void) {
 #ifdef _WIN32
   const wchar_t* model_path = L"squeezenet.onnx";
 #else
-  const char* model_path = "/home/faith/AI_baili_train/best5000-sim.with_runtime_opt.ort";
+  const char* model_path = "best5000-sim.with_runtime_opt.ort";
 #endif
 
   printf("Using Onnxruntime C++ API\n");
@@ -101,33 +116,55 @@ int main(void) {
   Ort::Value input_tensor = Ort::Value::CreateTensor<float>(memory_info, input_tensor_values.data(), input_tensor_size, input_node_dims.data(), 4);
   assert(input_tensor.IsTensor());
 
-  // score model & input tensor, get back output tensor
-  auto output_tensors = session.Run(Ort::RunOptions{nullptr}, input_node_names.data(), &input_tensor, 1, output_node_names.data(), 1);
-  //   assert(output_tensors.size() == 1 && output_tensors.front().IsTensor());
 
-  // Get pointer to output tensor float values
-  float* floatarr = output_tensors.front().GetTensorMutableData<float>();
-  //   assert(abs(floatarr[0] - 0.000045) < 1e-6);
+  int times = 10;
+  int loop = times;
+  double avg = 0;
+  while (loop > 0) {
+      uint64_t begin = time_get();
 
-  // score the model, and print scores for first 5 classes
-  for (int i = 0; i < 9; i++)
-    printf("Score for class [%d] =  %f\n", i, floatarr[i]);
+      // score model & input tensor, get back output tensor
+      auto output_tensors = session.Run(Ort::RunOptions{nullptr}, input_node_names.data(), &input_tensor, 1, output_node_names.data(), 1);
+      //   assert(output_tensors.size() == 1 && output_tensors.front().IsTensor());
+
+
+      uint64_t end = time_get();
+      double lasting = (double)(end - begin) / 1000.0f / 1000.0f;
+      printf("\nLasting: %12.3fms\n", lasting);
+
+
+
+      // ///******************  comment out
+      // // Get pointer to output tensor float values
+      // float* floatarr = output_tensors.front().GetTensorMutableData<float>();
+      // //   assert(abs(floatarr[0] - 0.000045) < 1e-6);
+
+      // // score the model, and print scores for first 5 classes
+      // for (int i = 0; i < 9; i++)
+      //   printf("Score for class [%d] =  %f\n", i, floatarr[i]);
+
+      // // 获取output的shape
+      // Ort::TensorTypeAndShapeInfo shape_info = output_tensors.front().GetTensorTypeAndShapeInfo();
+
+      // // 获取output的dim
+      // size_t dim_count = shape_info.GetDimensionsCount();
+      // std::cout<< dim_count << std::endl;
+
+      // // 获取output的shape
+      // int64_t dims[3];
+      // shape_info.GetDimensions(dims, sizeof(dims) / sizeof(dims[0]));
+      // std::cout<< dims[0] << "," << dims[1] << "," << dims[2] << std::endl;
+
+
+      avg += lasting;
+      loop--;
+  }
+  printf("avg: %12.3fms\n", avg / times);
+
 
   printf("Done!\n");
 
 
-
-  // 获取output的shape
-  Ort::TensorTypeAndShapeInfo shape_info = output_tensors.front().GetTensorTypeAndShapeInfo();
-
-  // 获取output的dim
-  size_t dim_count = shape_info.GetDimensionsCount();
-  std::cout<< dim_count << std::endl;
-
-  // 获取output的shape
-  int64_t dims[3];
-  shape_info.GetDimensions(dims, sizeof(dims) / sizeof(dims[0]));
-  std::cout<< dims[0] << "," << dims[1] << "," << dims[2] << std::endl;
 
 //   // 取output数据
 //   float* f = output_tensors.GetTensorMutableData<float>();

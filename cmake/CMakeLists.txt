@@ -59,8 +59,9 @@ if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Choose build type: Debug Release RelWithDebInfo MinSizeRel." FORCE)
 endif()
 
+# change don't check
 if("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 8)
-  message(FATAL_ERROR  "GCC version must be greater than or equal to 8")
+   message(FATAL_ERROR  "GCC version must be greater than or equal to 8")
 endif()
 
 # Options
@@ -146,7 +147,7 @@ option(onnxruntime_USE_WEBNN "Build with WebNN support. Enable hardware accelera
 
 # Options related to reducing the binary size produced by the build
 # XNNPACK EP requires the internal NHWC contrib ops to be available, so this option must be OFF when onnxruntime_USE_XNNPACK is ON
-cmake_dependent_option(onnxruntime_DISABLE_CONTRIB_OPS "Disable contrib ops" ON "NOT onnxruntime_USE_XNNPACK" OFF) #change onnxruntime_DISABLE_CONTRIB_OPS OFF->ON
+cmake_dependent_option(onnxruntime_DISABLE_CONTRIB_OPS "Disable contrib ops" OFF "NOT onnxruntime_USE_XNNPACK" OFF) #change onnxruntime_DISABLE_CONTRIB_OPS OFF->ON build error
 option(onnxruntime_DISABLE_ML_OPS "Disable traditional ML ops" OFF)
 option(onnxruntime_DISABLE_SPARSE_TENSORS "Disable sparse tensors data types" OFF)
 option(onnxruntime_DISABLE_OPTIONAL_TYPE "Disable optional type" OFF)
@@ -181,7 +182,7 @@ option(onnxruntime_ENABLE_TRAINING "Enable full training functionality. Includes
 option(onnxruntime_ENABLE_TRAINING_APIS "Enable ort training apis." OFF)
 option(onnxruntime_ENABLE_TRAINING_OPS "Include training operators but no training session support." OFF)
 option(onnxruntime_ENABLE_TRAINING_E2E_TESTS "Enable training end-to-end tests." OFF)
-option(onnxruntime_ENABLE_CPU_FP16_OPS "Build with advanced instruction sets" ON)
+option(onnxruntime_ENABLE_CPU_FP16_OPS "Build with advanced instruction sets" OFF) #change
 option(onnxruntime_USE_NCCL "Build with NCCL support" OFF)
 option(onnxruntime_USE_MPI "Build with MPI support" OFF)
 

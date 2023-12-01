@@ -26,6 +26,31 @@ https://blog.csdn.net/qq_41182465/article/details/130901506
 --- mini
 ./build.sh --config=MinSizeRel --build_shared_lib --parallel 16 --minimal_build --disable_ml_ops --disable_exceptions --disable_rtti --skip_tests --include_ops_by_config /home/faith/AI_baili_train/best5000-sim.required_operators.with_runtime_opt.config
 
+cross compile:
+sudo apt-get install --reinstall gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+cd build/Linux/MinSizeRel
+/home/faith/miniconda3/bin/cmake /home/faith/onnxruntime/cmake -Donnxruntime_RUN_ONNX_TESTS=OFF -Donnxruntime_GENERATE_TEST_REPORTS=ON -DPython_EXECUTABLE=/home/faith/miniconda3/bin/python3 -DPYTHON_EXECUTABLE=/home/faith/miniconda3/bin/python3 -Donnxruntime_USE_MIMALLOC=OFF -Donnxruntime_ENABLE_PYTHON=OFF -Donnxruntime_BUILD_CSHARP=OFF -Donnxruntime_BUILD_JAVA=OFF -Donnxruntime_BUILD_NODEJS=OFF -Donnxruntime_BUILD_OBJC=OFF -Donnxruntime_BUILD_SHARED_LIB=ON -Donnxruntime_BUILD_APPLE_FRAMEWORK=OFF -Donnxruntime_USE_DNNL=OFF -Donnxruntime_USE_NNAPI_BUILTIN=OFF -Donnxruntime_USE_RKNPU=OFF -Donnxruntime_USE_LLVM=OFF -Donnxruntime_ENABLE_MICROSOFT_INTERNAL=OFF -Donnxruntime_USE_VITISAI=OFF -Donnxruntime_USE_TENSORRT=OFF -Donnxruntime_USE_TENSORRT_BUILTIN_PARSER=ON -Donnxruntime_USE_TVM=OFF -Donnxruntime_TVM_CUDA_RUNTIME=OFF -Donnxruntime_TVM_USE_HASH=OFF -Donnxruntime_USE_MIGRAPHX=OFF -Donnxruntime_DISABLE_CONTRIB_OPS=OFF -Donnxruntime_DISABLE_ML_OPS=ON -Donnxruntime_DISABLE_RTTI=ON -Donnxruntime_DISABLE_EXCEPTIONS=ON -Donnxruntime_MINIMAL_BUILD=ON -Donnxruntime_EXTENDED_MINIMAL_BUILD=OFF -Donnxruntime_MINIMAL_BUILD_CUSTOM_OPS=OFF -Donnxruntime_REDUCED_OPS_BUILD=ON -Donnxruntime_ENABLE_LANGUAGE_INTEROP_OPS=OFF -Donnxruntime_USE_DML=OFF -Donnxruntime_USE_WINML=OFF -Donnxruntime_BUILD_MS_EXPERIMENTAL_OPS=OFF -Donnxruntime_USE_TELEMETRY=OFF -Donnxruntime_ENABLE_LTO=OFF -Donnxruntime_USE_ACL=OFF -Donnxruntime_USE_ACL_1902=OFF -Donnxruntime_USE_ACL_1905=OFF -Donnxruntime_USE_ACL_1908=OFF -Donnxruntime_USE_ACL_2002=OFF -Donnxruntime_USE_ARMNN=OFF -Donnxruntime_ARMNN_RELU_USE_CPU=ON -Donnxruntime_ARMNN_BN_USE_CPU=ON -Donnxruntime_USE_JSEP=OFF -Donnxruntime_ENABLE_NVTX_PROFILE=OFF -Donnxruntime_ENABLE_TRAINING=OFF -Donnxruntime_ENABLE_TRAINING_OPS=OFF -Donnxruntime_ENABLE_TRAINING_APIS=OFF -Donnxruntime_ENABLE_CPU_FP16_OPS=OFF -Donnxruntime_USE_NCCL=OFF -Donnxruntime_BUILD_BENCHMARKS=OFF -Donnxruntime_USE_ROCM=OFF -DOnnxruntime_GCOV_COVERAGE=OFF -Donnxruntime_USE_MPI=OFF -Donnxruntime_ENABLE_MEMORY_PROFILE=OFF -Donnxruntime_ENABLE_CUDA_LINE_NUMBER_INFO=OFF -Donnxruntime_USE_CUDA_NHWC_OPS=OFF -Donnxruntime_BUILD_WEBASSEMBLY_STATIC_LIB=OFF -Donnxruntime_ENABLE_WEBASSEMBLY_EXCEPTION_CATCHING=ON -Donnxruntime_ENABLE_WEBASSEMBLY_API_EXCEPTION_CATCHING=OFF -Donnxruntime_ENABLE_WEBASSEMBLY_EXCEPTION_THROWING=ON -Donnxruntime_WEBASSEMBLY_RUN_TESTS_IN_BROWSER=OFF -Donnxruntime_ENABLE_WEBASSEMBLY_THREADS=OFF -Donnxruntime_ENABLE_WEBASSEMBLY_DEBUG_INFO=OFF -Donnxruntime_ENABLE_WEBASSEMBLY_PROFILING=OFF -Donnxruntime_ENABLE_LAZY_TENSOR=OFF -Donnxruntime_ENABLE_EXTERNAL_CUSTOM_OP_SCHEMAS=OFF -Donnxruntime_ENABLE_CUDA_PROFILING=OFF -Donnxruntime_ENABLE_ROCM_PROFILING=OFF -Donnxruntime_USE_XNNPACK=OFF -Donnxruntime_USE_WEBNN=OFF -Donnxruntime_USE_CANN=OFF -Donnxruntime_USE_TRITON_KERNEL=OFF -Donnxruntime_DISABLE_FLOAT8_TYPES=OFF -Donnxruntime_DISABLE_SPARSE_TENSORS=OFF -Donnxruntime_DISABLE_OPTIONAL_TYPE=OFF -DCMAKE_TLS_VERIFY=ON -DFETCHCONTENT_QUIET=OFF -Donnxruntime_ENABLE_MEMLEAK_CHECKER=OFF -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_PREFIX_PATH=/home/faith/onnxruntime/build/Linux/MinSizeRel/installed -DCMAKE_TOOLCHAIN_FILE=/home/faith/onnxruntime/cmake/aarch64.cmake
+
+
+workable:
+download: https://sourceforge.net/projects/raspberry-pi-cross-compilers/
+disable onnxruntime_ENABLE_CPU_FP16_OPS
+1. CROSS_COMPILE=/home/faith/cross-pi-gcc-10.3.0-64/bin/aarch64-linux-gnu-g++
+2. mkdir arm_build
+3. cmake -Donnxruntime_RUN_ONNX_TESTS=OFF -Donnxruntime_GENERATE_TEST_REPORTS=OFF -Donnxruntime_GCC_STATIC_CPP_RUNTIME=ON -DCMAKE_BUILD_TYPE=Release -Dprotobuf_WITH_ZLIB=OFF -DCMAKE_TOOLCHAIN_FILE=/home/faith/onnxruntime/cmake/aarch64.cmake -Donnxruntime_ENABLE_PYTHON=OFF -Donnxruntime_BUILD_SHARED_LIB=ON -Donnxruntime_DEV_MODE=OFF -DCMAKE_PREFIX_PATH=/home/faith/onnxruntime/arm_build/installed ../cmake/
+
+native raspberry:
+/home/faith/.local/bin/cmake -Donnxruntime_RUN_ONNX_TESTS=OFF -Donnxruntime_GENERATE_TEST_REPORTS=OFF -Donnxruntime_GCC_STATIC_CPP_RUNTIME=ON -DCMAKE_BUILD_TYPE=Re
+lease -Dprotobuf_WITH_ZLIB=OFF  -Donnxruntime_ENABLE_PYTHON=OFF -Donnxruntime_BUILD_SHARED_LIB=ON -Donnxruntime_DEV_MODE=OFF ../cmake/
+
+4. make -j $(nproc)
+
+or
+
+5.
+./build.sh --config=MinSizeRel --build_shared_lib --parallel 16 --minimal_build --disable_ml_ops --disable_exceptions --disable_rtti --skip_tests --include_ops_by_config /home/faith/AI_baili_train/best5000-sim.required_operators.with_runtime_opt.config --build_dir arm_build --cmake_extra_defines CMAKE_TOOLCHAIN_FILE=/home/faith/onnxruntime/cmake/aarch64.cmake
+
+
 
 重新build的话需要： --update --build
 ./build.sh --arm --config=MinSizeRel --build_shared_lib --parallel 16 --minimal_build --disable_ml_ops --disable_exceptions --disable_rtti --skip_tests --include_ops_by_config /home/faith/AI_baili_train/best5000-sim.required_operators.with_runtime_opt.config --update --build --build_dir build/x86
