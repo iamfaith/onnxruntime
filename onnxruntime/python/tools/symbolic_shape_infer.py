@@ -197,6 +197,7 @@ class SymbolicShapeInference:
             "BiasGelu": self._infer_BiasGelu,
             "BiasSplitGelu": self._infer_BiasSplitGelu,
             "DecoderMaskedMultiHeadAttention": self._infer_DecoderMaskedMultiHeadAttention,
+            "DequantizeLinear": self._infer_DequantizeLinear,
             "EmbedLayerNormalization": self._infer_EmbedLayerNormalization,
             "FastGelu": self._infer_FastGelu,
             "GatedRelativePositionBias": self._infer_GatedRelativePositionBias,
@@ -212,6 +213,7 @@ class SymbolicShapeInference:
             "PackedAttention": self._infer_PackedAttention,
             "PackedMultiHeadAttention": self._infer_PackedMultiHeadAttention,
             "PythonOp": self._infer_PythonOp,
+            "QuantizeLinear": self._infer_QuantizeLinear,
             "QuickGelu": self._infer_FastGelu,
             "RelativePositionBias": self._infer_RelativePositionBias,
             "RemovePadding": self._infer_RemovePadding,
@@ -457,6 +459,8 @@ class SymbolicShapeInference:
             "GemmFastGelu",
             "LayerNormalization",
             "LongformerAttention",
+            "DequantizeLinear",
+            "QuantizeLinear",
             "RelativePositionBias",
             "RemovePadding",
             "RestorePadding",
@@ -978,6 +982,29 @@ class SymbolicShapeInference:
                 get_shape_from_sympy_shape(sympy_shape),
             )
         )
+
+    def _infer_DequantizeLinear(self, node):  # noqa: N802
+        # Get the output data type from the scale input (index 1, required).
+        output_dtype = self.known_vi_[node.input[1]].type.tensor_type.elem_type
+
+        # Get the output shape from the first input.
+        output_shape = self._get_shape(node, 0)
+
+        vi = self.known_vi_[node.output[0]]
+        vi.CopyFrom(helper.make_tensor_value_info(node.output[0], output_dtype, output_shape))
+
+    def _infer_QuantizeLinear(self, node):  # noqa: N802
+        # Get the output data type from the zero-point input (index 2, optional).
+        # Otherwise, default to uint8
+        output_dtype = onnx.TensorProto.UINT8
+        if len(node.input) > 2 and node.input[2]:
+            output_dtype = self.known_vi_[node.input[2]].type.tensor_type.elem_type
+
+        # Get the output shape from the first input.
+        output_shape = self._get_shape(node, 0)
+
+        vi = self.known_vi_[node.output[0]]
+        vi.CopyFrom(helper.make_tensor_value_info(node.output[0], output_dtype, output_shape))
 
     def _infer_Einsum(self, node):  # noqa: N802
         # ref:https://github.com/onnx/onnx/blob/623dfaa0151b2e4ce49779c3ec31cbd78c592b80/onnx/defs/math/defs.cc#L3275
@@ -2415,9 +2442,9 @@ class SymbolicShapeInference:
 
     def _infer_PythonOp(self, node):  # noqa: N802
         output_tensor_types = get_attribute(node, "output_tensor_types")
-        assert output_tensor_types
+        assert output_tensor_types, f"PythonOp '{node.name}' has no output_tensor_types attribute."
         output_tensor_ranks = get_attribute(node, "output_tensor_ranks")
-        assert output_tensor_ranks
+        assert output_tensor_ranks, f"PythonOp '{node.name}' has no output_tensor_ranks attribute."
 
         from onnxruntime.capi._pybind_state import get_shape_inference_function
 
@@ -2438,7 +2465,10 @@ class SymbolicShapeInference:
                 input_dtype = self.known_vi_[node.input[input_index]].type.tensor_type.elem_type
                 input_dtypes.append(input_dtype)
             output_shapes, output_dtypes = shape_inferer(node, input_shapes, input_dtypes)
-            assert len(output_shapes) == len(output_dtypes) == (len(node.output) - 1)
+            assert len(output_shapes) == len(output_dtypes) == (len(node.output) - 1), (
+                f"PythonOp '{func_name}' returned {len(output_shapes)} shapes and {len(output_dtypes)} dtypes, "
+                f"but expected {len(node.output) - 1} outputs."
+            )
             for i in range(len(node.output) - 1):
                 output_index = i + 1
                 vi = self.known_vi_[node.output[output_index]]
