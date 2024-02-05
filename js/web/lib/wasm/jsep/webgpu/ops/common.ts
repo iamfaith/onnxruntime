@@ -259,8 +259,16 @@ export const tensorTypeToWsglValueType = (type: DataType, components: 1|2|3|4 = 
   return typeof mappedType === 'string' ? mappedType : mappedType[1];
 };
 
-export const createTensorShapeVariables = (dims: readonly number[]): ProgramUniform[] =>
-    dims.length === 0 ? [] : [{type: 'uint32', data: dims}, {type: 'uint32', data: ShapeUtil.computeStrides(dims)}];
+export const createTensorShapeVariables = (...dims: ReadonlyArray<readonly number[]>): ProgramUniform[] => {
+  const programUniforms: ProgramUniform[] = [];
+  dims.forEach(dim => {
+    if (dim.length !== 0) {
+      programUniforms.push(
+          {type: DataType.uint32, data: dim}, {type: DataType.uint32, data: ShapeUtil.computeStrides(dim)});
+    }
+  });
+  return programUniforms;
+};
 
 /**
  * A helper function to get maximum vector size for specified data length
@@ -326,18 +334,32 @@ export const sumVector = (name: string, components: number) => {
 };
 
 /**
- * A helper function that returns uniform element at index.
- * @param name - the name of uniform element.
- * @param index - the index of uniform element.
- * @param length - the length of uniform element.
+ * A helper function that returns variable element at index.
+ * @param name - the name of variable.
+ * @param index - the index of variable element.
+ * @param length - the length of variable.
+ * @param type - the type of variable, optional.
  */
-export const getUniformElementAt = (name: string, index: number|string, length: number): string => {
-  if (typeof (index) === 'string') {
-    return length > 4 ? `${name}[(${index}) / 4][(${index}) % 4]` : length > 1 ? `${name}[${index}]` : name;
-  } else {
-    return length > 4 ? `${name}[${Math.floor(index / 4)}][${index % 4}]` : length > 1 ? `${name}[${index}]` : name;
-  }
-};
+export const getElementAt =
+    (name: string, index: number|string, length: number, type?: UniformDataElementType): string => {
+      if (name.startsWith('uniforms.') && length > 4) {
+        if (typeof (index) === 'string') {
+          if (type === 'f16') {
+            return `${name}[(${index}) / 8][(${index}) % 8 / 4][(${index}) % 8 % 4]`;
+          } else {
+            return `${name}[(${index}) / 4][(${index}) % 4]`;
+          }
+        } else {
+          if (type === 'f16') {
+            return `${name}[${Math.floor(index / 8)}][${Math.floor(index % 8 / 4)}][${index % 8 % 4}]`;
+          } else {
+            return `${name}[${Math.floor(index / 4)}][${index % 4}]`;
+          }
+        }
+      } else {
+        return length > 1 ? `${name}[${index}]` : name;
+      }
+    };
 
 /**
  * A helper function to get a IndicesHelper for a given input or output.
@@ -380,8 +402,8 @@ const createIndicesHelper =
       let o2iSnippet = '';
       for (let i = 0; i < rank - 1; i++) {
         o2iSnippet += `
-    let dim${i} = current / ${getUniformElementAt(strides, i, rank)};
-    let rest${i} = current % ${getUniformElementAt(strides, i, rank)};
+    let dim${i} = current / ${getElementAt(strides, i, rank)};
+    let rest${i} = current % ${getElementAt(strides, i, rank)};
     indices[${i}] = dim${i};
     current = rest${i};
     `;
@@ -404,7 +426,7 @@ const createIndicesHelper =
       const offsets: string[] = [];
       if (rank >= 2) {
         for (let i = rank - 1; i >= 0; i--) {
-          offsets.push(`${getUniformElementAt(strides, i, rank)} * (indices[${i}])`);
+          offsets.push(`${getElementAt(strides, i, rank)} * (indices[${i}])`);
         }
       }
 
@@ -425,7 +447,7 @@ const createIndicesHelper =
         if (rank < 2) {
           return `${varIndices}`;
         } else {
-          return `${varIndices}[${idx}]`;
+          return `${getElementAt(varIndices, idx, rank)}`;
         }
       };
 
@@ -433,7 +455,7 @@ const createIndicesHelper =
         if (rank < 2) {
           return `${varIndices}=${value};`;
         } else {
-          return `${varIndices}[${idx}]=${value};`;
+          return `${getElementAt(varIndices, idx, rank)}=${value};`;
         }
       };
 
@@ -584,30 +606,39 @@ const createIndicesHelper =
 
       const impl = () => {
         const impls = [];
-        if (!useUniform) {
-          impls.push(`const ${shape} = ${type.indices}(${shapeOrRank.join(',')});`);
-          impls.push(`const ${strides} = ${type.indices}(${ShapeUtil.computeStrides(shapeOrRank).join(',')});`);
-        }
+        let needShapeStrides = false;
         if (implementationUsed.offsetToIndices) {
           impls.push(offsetToIndicesImplementation);
+          needShapeStrides = true;
         }
         if (implementationUsed.indicesToOffset) {
           impls.push(indicesToOffsetImplementation);
+          needShapeStrides = true;
         }
         if (implementationUsed.broadcastedIndicesToOffset) {
           Object.values(broadcastedIndicesToOffsetImplementation).forEach(impl => impls.push(impl));
+          needShapeStrides = true;
         }
         if (implementationUsed.set) {
           impls.push(setImplementation);
+          needShapeStrides = true;
         }
         if (implementationUsed.setByIndices) {
           impls.push(setByIndicesImplementation);
+          needShapeStrides = true;
         }
         if (implementationUsed.get) {
           impls.push(getImplementation);
+          needShapeStrides = true;
         }
         if (implementationUsed.getByIndices) {
           impls.push(getByIndicesImplementation);
+          needShapeStrides = true;
+        }
+        if (!useUniform && needShapeStrides) {
+          impls.unshift(
+              `const ${shape} = ${type.indices}(${shapeOrRank.join(',')});`,
+              `const ${strides} = ${type.indices}(${ShapeUtil.computeStrides(shapeOrRank).join(',')});`);
         }
         return impls.join('\n');
       };
@@ -675,7 +706,7 @@ export const internalVariable =
     (name: string, type: number, shapeOrRank: number|readonly number[], components: 1|2|3|4 = 1): IndicesHelper =>
         createIndicesHelper(name, type, shapeOrRank, 'internal', components);
 
-export type UniformDataElementType = 'u32'|'f32'|'i32';
+export type UniformDataElementType = 'u32'|'f16'|'f32'|'i32';
 export type UniformsArrayType = Array<{name: string; type: UniformDataElementType; length?: number}>;
 
 /**
@@ -767,15 +798,17 @@ class ShaderHelperImpl implements ShaderHelper {
 
     const is1DimensionDispatch = this.normalizedDispatchGroup[1] === 1 && this.normalizedDispatchGroup[2] === 1;
     const paramList = is1DimensionDispatch ? `@builtin(global_invocation_id) global_id : vec3<u32>,
+    @builtin(workgroup_id) workgroup_id : vec3<u32>,
     @builtin(local_invocation_id) local_id : vec3<u32>` :
-                                             `@builtin(local_invocation_index) local_index : u32,
+                                             `@builtin(local_invocation_id) local_id : vec3<u32>,
+    @builtin(local_invocation_index) local_idx : u32,
     @builtin(workgroup_id) workgroup_id : vec3<u32>,
     @builtin(num_workgroups) num_workgroups : vec3<u32>`;
     const globalIdxDefinition = is1DimensionDispatch ?
-        'let global_idx = global_id.x;' :
+        'let global_idx = global_id.x; let local_idx = local_id.x;' :
         `let global_idx = (workgroup_id.z * num_workgroups[0] * num_workgroups[1] +
           workgroup_id.y * num_workgroups[0] + workgroup_id.x) * ${
-            workgroupSizeX * workgroupSizeY * workgroupSizeZ}u + local_index;`;
+            workgroupSizeX * workgroupSizeY * workgroupSizeZ}u + local_idx;`;
 
     return `@compute @workgroup_size(${workgroupSizeX}, ${workgroupSizeY}, ${workgroupSizeZ})
   fn main(${paramList}) {
@@ -846,7 +879,11 @@ class ShaderHelperImpl implements ShaderHelper {
     const uniformSnippets: string[] = [];
     for (const {name, type, length} of this.uniforms) {
       if (length && length > 4) {
-        uniformSnippets.push(`${name}:array<vec4<${type}>, ${Math.ceil(length / 4)}>`);
+        if (type === 'f16') {
+          uniformSnippets.push(`@align(16) ${name}:array<mat2x4<${type}>, ${Math.ceil(length / 8)}>`);
+        } else {
+          uniformSnippets.push(`${name}:array<vec4<${type}>, ${Math.ceil(length / 4)}>`);
+        }
       } else {
         const typeTemp = length == null || length === 1 ? type : `vec${length}<${type}>`;
         uniformSnippets.push(`${name}:${typeTemp}`);
@@ -893,6 +930,3 @@ export const getBroadcastDims = (inShape: readonly number[], outShape: readonly 
   }
   return dims;
 };
-
-// TODO: remove this when all related uses have been removed.
-export const enableShapesUniforms = (_rank: number): boolean => true;
