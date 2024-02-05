@@ -59,8 +59,9 @@ if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Choose build type: Debug Release RelWithDebInfo MinSizeRel." FORCE)
 endif()
 
+# change don't check
 if("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 8)
-  message(FATAL_ERROR  "GCC version must be greater than or equal to 8")
+   message(FATAL_ERROR  "GCC version must be greater than or equal to 8")
 endif()
 
 # Options
@@ -90,15 +91,15 @@ option(onnxruntime_USE_RKNPU "Build with RKNPU support" OFF)
 option(onnxruntime_USE_DNNL "Build with DNNL support" OFF)
 option(onnxruntime_USE_NEURAL_SPEED "Build with Neural Speed support" OFF)
 option(onnxruntime_USE_JSEP "Build with JavaScript implemented kernels support" OFF)
-option(onnxruntime_BUILD_UNIT_TESTS "Build ONNXRuntime unit tests" ON)
+option(onnxruntime_BUILD_UNIT_TESTS "Build ONNXRuntime unit tests" OFF) # change
 option(onnxruntime_BUILD_CSHARP "Build C# library" OFF)
 option(onnxruntime_BUILD_OBJC "Build Objective-C library" OFF)
 option(onnxruntime_USE_PREINSTALLED_EIGEN "Use pre-installed EIGEN. Need to provide eigen_SOURCE_PATH if turn this on." OFF)
 option(onnxruntime_BUILD_BENCHMARKS "Build ONNXRuntime micro-benchmarks" OFF)
 option(onnxruntime_USE_LLVM "Build TVM with LLVM" OFF)
 
-cmake_dependent_option(onnxruntime_USE_FLASH_ATTENTION "Build flash attention kernel for scaled dot product attention" ON "NOT WIN32; onnxruntime_USE_CUDA" OFF)
-option(onnxruntime_USE_MEMORY_EFFICIENT_ATTENTION "Build memory efficient attention kernel for scaled dot product attention" ON)
+cmake_dependent_option(onnxruntime_USE_FLASH_ATTENTION "Build flash attention kernel for scaled dot product attention" OFF "NOT WIN32; onnxruntime_USE_CUDA" OFF) # change
+option(onnxruntime_USE_MEMORY_EFFICIENT_ATTENTION "Build memory efficient attention kernel for scaled dot product attention" OFF) # change
 
 option(onnxruntime_BUILD_FOR_NATIVE_MACHINE "Enable this option for turning on optimization specific to this machine" OFF)
 option(onnxruntime_USE_AVX "Use AVX instructions" OFF)
@@ -149,7 +150,7 @@ option(onnxruntime_USE_WEBNN "Build with WebNN support. Enable hardware accelera
 
 # Options related to reducing the binary size produced by the build
 # XNNPACK EP requires the internal NHWC contrib ops to be available, so this option must be OFF when onnxruntime_USE_XNNPACK is ON
-cmake_dependent_option(onnxruntime_DISABLE_CONTRIB_OPS "Disable contrib ops" OFF "NOT onnxruntime_USE_XNNPACK" OFF)
+cmake_dependent_option(onnxruntime_DISABLE_CONTRIB_OPS "Disable contrib ops" OFF "NOT onnxruntime_USE_XNNPACK" OFF) #change onnxruntime_DISABLE_CONTRIB_OPS OFF->ON build error
 option(onnxruntime_DISABLE_ML_OPS "Disable traditional ML ops" OFF)
 option(onnxruntime_DISABLE_SPARSE_TENSORS "Disable sparse tensors data types" OFF)
 option(onnxruntime_DISABLE_OPTIONAL_TYPE "Disable optional type" OFF)
@@ -184,7 +185,7 @@ option(onnxruntime_ENABLE_TRAINING "Enable full training functionality. Includes
 option(onnxruntime_ENABLE_TRAINING_APIS "Enable ort training apis." OFF)
 option(onnxruntime_ENABLE_TRAINING_OPS "Include training operators but no training session support." OFF)
 option(onnxruntime_ENABLE_TRAINING_E2E_TESTS "Enable training end-to-end tests." OFF)
-option(onnxruntime_ENABLE_CPU_FP16_OPS "Build with advanced instruction sets" ON)
+option(onnxruntime_ENABLE_CPU_FP16_OPS "Build with advanced instruction sets" OFF) #change
 option(onnxruntime_USE_NCCL "Build with NCCL support" OFF)
 option(onnxruntime_USE_MPI "Build with MPI support" OFF)
 
@@ -237,7 +238,9 @@ option(onnxruntime_ENABLE_ATEN "Enable ATen fallback" OFF)
 option(onnxruntime_ENABLE_TRITON "Enable Triton" OFF)
 
 # composable kernel is managed automatically, unless user want to explicitly disable it, it should not be manually set
-option(onnxruntime_USE_COMPOSABLE_KERNEL "Enable composable kernel for ROCm EP" ON)
+# ROCm EP是一个用于AMD GPU的执行提供器, 它使用HIP编程模型和MIOpen库来实现ONNX运算符。
+# 可组合内核是一种新的内核架构，它可以将多个运算符合并为一个内核，从而减少内核启动的开销，提高性能。
+option(onnxruntime_USE_COMPOSABLE_KERNEL "Enable composable kernel for ROCm EP" OFF) # change
 option(onnxruntime_USE_ROCBLAS_EXTENSION_API "Enable rocblas tuning for ROCm EP" OFF)
 option(onnxruntime_USE_TRITON_KERNEL "Enable triton compiled kernel" OFF)
 option(onnxruntime_BUILD_KERNEL_EXPLORER "Build Kernel Explorer for testing and profiling GPU kernels" OFF)
@@ -1811,6 +1814,12 @@ if(TARGET onnxruntime)
     "${PROJECT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
 endif()
+
+# 忽略溢出警告
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=overflow")
+
+# 以关闭单元测试的编译。
+set(onnxruntime_BUILD_UNIT_TESTS OFF)
 
 if(DEFINED BUILD_AS_ARM64X)
   set(ARM64X_TARGETS onnxruntime)

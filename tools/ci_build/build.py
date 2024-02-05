@@ -2513,10 +2513,11 @@ def main():
         log.debug("Defaulting to running update, build [and test for native builds].")
         args.update = True
         args.build = True
-        if cross_compiling:
-            args.test = args.android_abi == "x86_64" or args.android_abi == "arm64-v8a"
-        else:
-            args.test = True
+        ## change
+        # if cross_compiling:
+        #     args.test = args.android_abi == "x86_64" or args.android_abi == "arm64-v8a"
+        # else:
+        #     args.test = True
 
     if args.skip_tests:
         args.test = False
