@@ -40,8 +40,11 @@ disable onnxruntime_ENABLE_CPU_FP16_OPS
 3. cmake -Donnxruntime_RUN_ONNX_TESTS=OFF -Donnxruntime_GENERATE_TEST_REPORTS=OFF -Donnxruntime_GCC_STATIC_CPP_RUNTIME=ON -DCMAKE_BUILD_TYPE=Release -Dprotobuf_WITH_ZLIB=OFF -DCMAKE_TOOLCHAIN_FILE=/home/faith/onnxruntime/cmake/aarch64.cmake -Donnxruntime_ENABLE_PYTHON=OFF -Donnxruntime_BUILD_SHARED_LIB=ON -Donnxruntime_DEV_MODE=OFF -DCMAKE_PREFIX_PATH=/home/faith/onnxruntime/arm_build/installed ../cmake/
 
 native raspberry:
-/home/faith/.local/bin/cmake -Donnxruntime_RUN_ONNX_TESTS=OFF -Donnxruntime_GENERATE_TEST_REPORTS=OFF -Donnxruntime_GCC_STATIC_CPP_RUNTIME=ON -DCMAKE_BUILD_TYPE=Re
-lease -Dprotobuf_WITH_ZLIB=OFF  -Donnxruntime_ENABLE_PYTHON=OFF -Donnxruntime_BUILD_SHARED_LIB=ON -Donnxruntime_DEV_MODE=OFF ../cmake/
+/home/faith/.local/bin/cmake -Donnxruntime_RUN_ONNX_TESTS=OFF -Donnxruntime_GENERATE_TEST_REPORTS=OFF -Donnxruntime_GCC_STATIC_CPP_RUNTIME=ON -DCMAKE_BUILD_TYPE=Release -Dprotobuf_WITH_ZLIB=OFF  -Donnxruntime_ENABLE_PYTHON=OFF -Donnxruntime_BUILD_SHARED_LIB=ON -Donnxruntime_DEV_MODE=OFF ../cmake/
+
+
+Linux build:
+/home/faith/miniconda3/bin/cmake -Donnxruntime_RUN_ONNX_TESTS=OFF -Donnxruntime_GENERATE_TEST_REPORTS=OFF -Donnxruntime_GCC_STATIC_CPP_RUNTIME=ON -DCMAKE_BUILD_TYPE=Release -Dprotobuf_WITH_ZLIB=OFF  -Donnxruntime_ENABLE_PYTHON=OFF -Donnxruntime_BUILD_SHARED_LIB=ON -Donnxruntime_DEV_MODE=OFF ../cmake
 
 4. make -j $(nproc)
 

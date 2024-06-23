@@ -1,6 +1,10 @@
 cmake-*
 *_build/
 _deps/
+arm_build/
+cmake-*/
+CMakeFiles/
+cmake/
 # build, distribute, and bins (+ python proto bindings)
 build
 build_*/
