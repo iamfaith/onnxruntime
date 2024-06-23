@@ -237,10 +237,10 @@ void QnnLogging(const char* format,
   ORT_UNUSED_PARAMETER(level);
   ORT_UNUSED_PARAMETER(timestamp);
 
-  // Always output Qnn log as Ort verbose log
   const auto& logger = ::onnxruntime::logging::LoggingManager::DefaultLogger();
   const auto severity = ::onnxruntime::logging::Severity::kVERBOSE;
   const auto data_type = ::onnxruntime::logging::DataType::SYSTEM;
+
   if (logger.OutputIsEnabled(severity, data_type)) {
     ::onnxruntime::logging::Capture(logger,
                                     severity,
@@ -251,31 +251,77 @@ void QnnLogging(const char* format,
   }
 }
 
-void QnnBackendManager::InitializeQnnLog() {
+Status QnnBackendManager::InitializeQnnLog() {
   // Set Qnn log level align with Ort log level
-  QnnLog_Level_t qnn_log_level = QNN_LOG_LEVEL_WARN;
   auto ort_log_level = logger_->GetSeverity();
-  switch (ort_log_level) {
-    case logging::Severity::kVERBOSE:
-      qnn_log_level = QNN_LOG_LEVEL_DEBUG;
-      break;
-    case logging::Severity::kINFO:
-      qnn_log_level = QNN_LOG_LEVEL_INFO;
-      break;
-    case logging::Severity::kWARNING:
-      qnn_log_level = QNN_LOG_LEVEL_WARN;
-      break;
-    case logging::Severity::kERROR:
-      qnn_log_level = QNN_LOG_LEVEL_ERROR;
-      break;
-    default:
-      break;
-  }
+  QnnLog_Level_t qnn_log_level = MapOrtSeverityToQNNLogLevel(ort_log_level);
   LOGS(*logger_, VERBOSE) << "Set Qnn log level: " << qnn_log_level;
 
-  if (QNN_SUCCESS != qnn_interface_.logCreate(QnnLogging, qnn_log_level, &log_handle_)) {
-    LOGS(*logger_, WARNING) << "Unable to initialize logging in the QNN backend.";
+  Qnn_ErrorHandle_t result = qnn_interface_.logCreate(QnnLogging, qnn_log_level, &log_handle_);
+
+  if (result != QNN_SUCCESS) {
+    switch (result) {
+      case QNN_COMMON_ERROR_NOT_SUPPORTED:
+        LOGS(*logger_, ERROR) << "Logging not supported in the QNN backend.";
+        break;
+      case QNN_LOG_ERROR_INVALID_ARGUMENT:
+        LOGS(*logger_, ERROR) << "Invalid argument provided to QnnLog_create.";
+        break;
+      case QNN_LOG_ERROR_MEM_ALLOC:
+        LOGS(*logger_, ERROR) << "Memory allocation error during QNN logging initialization.";
+        break;
+      case QNN_LOG_ERROR_INITIALIZATION:
+        LOGS(*logger_, ERROR) << "Initialization of logging failed in the QNN backend.";
+        break;
+      default:
+        LOGS(*logger_, WARNING) << "Unknown error occurred while initializing logging in the QNN backend.";
+        break;
+    }
   }
+
+  ORT_RETURN_IF(QNN_BACKEND_NO_ERROR != result, "Failed to initialize logging in the QNN backend");
+  return Status::OK();
+}
+
+QnnLog_Level_t QnnBackendManager::MapOrtSeverityToQNNLogLevel(logging::Severity ort_log_level) {
+  // Map ORT log severity to Qnn log level
+  switch (ort_log_level) {
+    case logging::Severity::kVERBOSE:
+      return QNN_LOG_LEVEL_DEBUG;
+    case logging::Severity::kINFO:
+      return QNN_LOG_LEVEL_INFO;
+    case logging::Severity::kWARNING:
+      return QNN_LOG_LEVEL_WARN;
+    case logging::Severity::kERROR:
+    case logging::Severity::kFATAL:
+    default:
+      return QNN_LOG_LEVEL_ERROR;
+  }
+}
+
+Status QnnBackendManager::ResetQnnLogLevel() {
+  auto ort_log_level = logger_->GetSeverity();
+  LOGS(*logger_, INFO) << "Reset Qnn log level to ORT Logger level: " << (unsigned int)ort_log_level;
+  return UpdateQnnLogLevel(ort_log_level);
+}
+
+Status QnnBackendManager::UpdateQnnLogLevel(logging::Severity ort_log_level) {
+  ORT_RETURN_IF(nullptr == log_handle_, "Unable to update QNN Log Level. Invalid QNN log handle.");
+  QnnLog_Level_t qnn_log_level = MapOrtSeverityToQNNLogLevel(ort_log_level);
+
+  LOGS(*logger_, INFO) << "Updating Qnn log level to: " << qnn_log_level;
+
+  // Use the QnnLog_setLogLevel API to set the new log level
+  Qnn_ErrorHandle_t result = qnn_interface_.logSetLogLevel(log_handle_, qnn_log_level);
+  if (QNN_SUCCESS != result) {
+    if (result == QNN_LOG_ERROR_INVALID_ARGUMENT) {
+      LOGS(*logger_, ERROR) << "Invalid log level argument provided to QnnLog_setLogLevel.";
+    } else if (result == QNN_LOG_ERROR_INVALID_HANDLE) {
+      LOGS(*logger_, ERROR) << "Invalid log handle provided to QnnLog_setLogLevel.";
+    }
+  }
+  ORT_RETURN_IF(QNN_BACKEND_NO_ERROR != result, "Failed to set log level in Qnn backend");
+  return Status::OK();
 }
 
 Status QnnBackendManager::InitializeBackend() {
@@ -388,15 +434,21 @@ Status QnnBackendManager::ReleaseDevice() {
 }
 
 Status QnnBackendManager::InitializeProfiling() {
-  if (ProfilingLevel::OFF == profiling_level_ || ProfilingLevel::INVALID == profiling_level_) {
+  profiling_level_merge_ = profiling_level_;
+  // use profiling level from ETW if ETW is enabled
+  if (profiling_level_etw_ != ProfilingLevel::INVALID) {
+    profiling_level_merge_ = profiling_level_etw_;
+  }
+
+  if (ProfilingLevel::OFF == profiling_level_merge_ || ProfilingLevel::INVALID == profiling_level_merge_) {
     LOGS_DEFAULT(INFO) << "Profiling turned off.";
     return Status::OK();
   }
 
   QnnProfile_Level_t qnn_profile_level = QNN_PROFILE_LEVEL_BASIC;
-  if (ProfilingLevel::BASIC == profiling_level_) {
+  if (ProfilingLevel::BASIC == profiling_level_merge_) {
     qnn_profile_level = QNN_PROFILE_LEVEL_BASIC;
-  } else if (ProfilingLevel::DETAILED == profiling_level_) {
+  } else if (ProfilingLevel::DETAILED == profiling_level_merge_) {
     qnn_profile_level = QNN_PROFILE_LEVEL_DETAILED;
   }
   auto result = qnn_interface_.profileCreate(backend_handle_, qnn_profile_level, &profile_backend_handle_);
@@ -413,6 +465,23 @@ Status QnnBackendManager::ReleaseProfilehandle() {
   }
   profile_backend_handle_ = nullptr;
 
+  return Status::OK();
+}
+
+Status QnnBackendManager::SetProfilingLevelETW(ProfilingLevel profiling_level_etw_param) {
+  if (profiling_level_etw_ != profiling_level_etw_param) {
+    profiling_level_etw_ = profiling_level_etw_param;
+
+    auto result = ReleaseProfilehandle();
+    if (Status::OK() != result) {
+      ORT_THROW("Failed to ReleaseProfilehandle for previous QNN profiling");
+    }
+
+    result = InitializeProfiling();
+    if (Status::OK() != result) {
+      ORT_THROW("Failed to Re-InitializeProfiling for QNN ETW profiling");
+    }
+  }
   return Status::OK();
 }
 
@@ -455,10 +524,12 @@ Status QnnBackendManager::CreateContext() {
   ORT_RETURN_IF_ERROR(SetQnnContextConfig(context_priority_, qnn_context_config));
   const QnnContext_Config_t* context_configs[] = {&qnn_context_config, nullptr};
 
+  Qnn_ContextHandle_t context = nullptr;
   auto result = qnn_interface_.contextCreate(backend_handle_,
                                              device_handle_,
                                              context_configs,
-                                             &context_);
+                                             &context);
+  contexts_.push_back(context);
 
   ORT_RETURN_IF(QNN_CONTEXT_NO_ERROR != result, "Failed to create context.");
 
@@ -471,8 +542,14 @@ Status QnnBackendManager::ReleaseContext() {
     return Status::OK();
   }
 
-  auto result = qnn_interface_.contextFree(context_, nullptr);
-  ORT_RETURN_IF(QNN_CONTEXT_NO_ERROR != result, "Failed to release context.");
+  bool failed = false;
+  for (auto context : contexts_) {
+    auto result = qnn_interface_.contextFree(context, nullptr);
+    if (QNN_CONTEXT_NO_ERROR != result) {
+      failed = true;
+    }
+  }
+  ORT_RETURN_IF(failed, "Failed to release context.");
 
   context_created_ = false;
   return Status::OK();
@@ -484,9 +561,10 @@ std::unique_ptr<unsigned char[]> QnnBackendManager::GetContextBinaryBuffer(uint6
     LOGS(*logger_, ERROR) << "Failed to get valid function pointer.";
     return nullptr;
   }
-
+  ORT_ENFORCE(contexts_.size() > 0, "No valid QNN context!");
   uint64_t required_buffer_size(0);
-  Qnn_ErrorHandle_t rt = qnn_interface_.contextGetBinarySize(context_, &required_buffer_size);
+  // Generate all graphs in one single context
+  Qnn_ErrorHandle_t rt = qnn_interface_.contextGetBinarySize(contexts_[0], &required_buffer_size);
   if (QNN_CONTEXT_NO_ERROR != rt) {
     LOGS(*logger_, ERROR) << "Failed to get QNN context binary size. Error code: " << rt;
     return nullptr;
@@ -498,7 +576,7 @@ std::unique_ptr<unsigned char[]> QnnBackendManager::GetContextBinaryBuffer(uint6
     return nullptr;
   }
 
-  rt = qnn_interface_.contextGetBinary(context_,
+  rt = qnn_interface_.contextGetBinary(contexts_[0],
                                        reinterpret_cast<void*>(context_buffer.get()),
                                        required_buffer_size,
                                        &written_buffer_size);
@@ -518,6 +596,7 @@ std::unique_ptr<unsigned char[]> QnnBackendManager::GetContextBinaryBuffer(uint6
 }
 
 Status QnnBackendManager::LoadCachedQnnContextFromBuffer(char* buffer, uint64_t buffer_length,
+                                                         std::string node_name,
                                                          std::unordered_map<std::string, std::unique_ptr<qnn::QnnModel>>& qnn_models) {
   bool result = nullptr == qnn_sys_interface_.systemContextCreate ||
                 nullptr == qnn_sys_interface_.systemContextGetBinaryInfo ||
@@ -553,7 +632,6 @@ Status QnnBackendManager::LoadCachedQnnContextFromBuffer(char* buffer, uint64_t 
 
   ORT_RETURN_IF(graph_count < 1 || graphs_info == nullptr, "Failed to get graph info from Qnn cached context.");
   LOGS(*logger_, VERBOSE) << "Graph count from QNN context: " << graph_count << ", EPContext node count: " << qnn_models.size();
-  ORT_RETURN_IF(graph_count != qnn_models.size(), "Graph count from QNN context not equal to EPContext node count.");
 
   ORT_RETURN_IF(nullptr == qnn_interface_.contextCreateFromBinary,
                 "Invalid function pointer for contextCreateFromBinary.");
@@ -562,22 +640,29 @@ Status QnnBackendManager::LoadCachedQnnContextFromBuffer(char* buffer, uint64_t 
   ORT_RETURN_IF_ERROR(SetQnnContextConfig(context_priority_, qnn_context_config));
   const QnnContext_Config_t* context_configs[] = {&qnn_context_config, nullptr};
 
+  Qnn_ContextHandle_t context = nullptr;
   rt = qnn_interface_.contextCreateFromBinary(backend_handle_,
                                               device_handle_,
                                               context_configs,
                                               static_cast<void*>(buffer),
                                               buffer_length,
-                                              &context_,
+                                              &context,
                                               profile_backend_handle_);
   ORT_RETURN_IF(QNN_SUCCESS != rt, "Failed to create context from binary.");
-
-  // More work to support multiple partition, how to map the graph name in compile to qnn graph name
-  // Need the lower level framework to understand EPContext op and pass in the partition_name in fused_node during Compile
-  for (uint32_t i = 0; i < graph_count; ++i) {
-    std::string graph_name(graphs_info[i].graphInfoV1.graphName);
-    auto qnn_model_pos = qnn_models.find(graph_name);
-    ORT_RETURN_IF(qnn_model_pos == qnn_models.end(), graph_name + " does not match any EPContext node names.");
-    ORT_RETURN_IF_ERROR(qnn_model_pos->second->DeserializeGraphInfoFromBinaryInfo(graphs_info[i]));
+  contexts_.push_back(context);
+  if (1 == graph_count) {
+    // in case the EPContext node is generated from script
+    // the graph name from the context binary may not match the EPContext node name
+    auto qnn_model_pos = qnn_models.find(node_name);
+    ORT_RETURN_IF(qnn_model_pos == qnn_models.end(), node_name, " does not match any EPContext node names.");
+    ORT_RETURN_IF_ERROR(qnn_model_pos->second->DeserializeGraphInfoFromBinaryInfo(graphs_info[0], context));
+  } else {
+    for (uint32_t i = 0; i < graph_count; ++i) {
+      std::string graph_name(graphs_info[i].graphInfoV1.graphName);
+      auto qnn_model_pos = qnn_models.find(graph_name);
+      ORT_RETURN_IF(qnn_model_pos == qnn_models.end(), graph_name + " does not match any EPContext node names.");
+      ORT_RETURN_IF_ERROR(qnn_model_pos->second->DeserializeGraphInfoFromBinaryInfo(graphs_info[i], context));
+    }
   }
 
   qnn_sys_interface_.systemContextFree(sys_ctx_handle);
@@ -629,11 +714,6 @@ Status QnnBackendManager::SetupBackend(const logging::Logger& logger, bool load_
     LOGS(logger, VERBOSE) << "CreateContext succeed.";
   }
 
-  if (htp_performance_mode_ != HtpPerformanceMode::kHtpDefault) {
-    ORT_RETURN_IF_ERROR(SetHtpPowerConfig());
-    LOGS(logger, VERBOSE) << "SetHtpPowerConfig succeed.";
-  }
-
   LOGS(logger, VERBOSE) << "QNN SetupBackend succeed";
 
   backend_setup_completed_ = true;
@@ -641,7 +721,7 @@ Status QnnBackendManager::SetupBackend(const logging::Logger& logger, bool load_
   return Status::OK();
 }
 
-Status QnnBackendManager::SetHtpPowerConfig() {
+Status QnnBackendManager::CreateHtpPowerCfgId(uint32_t device_id, uint32_t core_id, uint32_t& htp_power_config_id) {
   QnnDevice_Infrastructure_t qnn_device_infra = nullptr;
   auto status = qnn_interface_.deviceGetInfrastructure(&qnn_device_infra);
   ORT_RETURN_IF(QNN_SUCCESS != status, "backendGetPerfInfrastructure failed.");
@@ -651,8 +731,22 @@ Status QnnBackendManager::SetHtpPowerConfig() {
                 "HTP infra type = ", htp_infra->infraType, ", which is not perf infra type.");
   QnnHtpDevice_PerfInfrastructure_t& htp_perf_infra = htp_infra->perfInfra;
   // Get power client id
-  status = htp_perf_infra.createPowerConfigId(/*device_id=*/0, /*core_id=*/0, &htp_power_config_client_id_);
+  status = htp_perf_infra.createPowerConfigId(device_id, core_id, &htp_power_config_id);
   ORT_RETURN_IF(QNN_SUCCESS != status, "createPowerConfigId failed.");
+
+  return Status::OK();
+}
+
+Status QnnBackendManager::SetHtpPowerConfig(uint32_t htp_power_config_client_id,
+                                            HtpPerformanceMode htp_performance_mode) {
+  QnnDevice_Infrastructure_t qnn_device_infra = nullptr;
+  auto status = qnn_interface_.deviceGetInfrastructure(&qnn_device_infra);
+  ORT_RETURN_IF(QNN_SUCCESS != status, "backendGetPerfInfrastructure failed.");
+
+  auto* htp_infra = static_cast<QnnHtpDevice_Infrastructure_t*>(qnn_device_infra);
+  ORT_RETURN_IF(QNN_HTP_DEVICE_INFRASTRUCTURE_TYPE_PERF != htp_infra->infraType,
+                "HTP infra type = ", htp_infra->infraType, ", which is not perf infra type.");
+  QnnHtpDevice_PerfInfrastructure_t& htp_perf_infra = htp_infra->perfInfra;
 
   constexpr const int kNumConfigs = 1;
   std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> power_configs(
@@ -660,17 +754,17 @@ Status QnnBackendManager::SetHtpPowerConfig() {
   QnnHtpPerfInfrastructure_PowerConfig_t& dcvs_config = power_configs[0];
   dcvs_config.option = QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_DCVS_V3;
   QnnHtpPerfInfrastructure_DcvsV3_t& dcvs_v3 = dcvs_config.dcvsV3Config;
-  dcvs_v3.contextId = htp_power_config_client_id_;
+  dcvs_v3.contextId = htp_power_config_client_id;
   dcvs_v3.setSleepDisable = 0;
   dcvs_v3.sleepDisable = 0;
   dcvs_v3.setDcvsEnable = 1;
-  dcvs_v3.dcvsEnable = kDcvsDisable;
   dcvs_v3.powerMode = QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_PERFORMANCE_MODE;
   // choose performance mode
-  switch (htp_performance_mode_) {
+  switch (htp_performance_mode) {
     case HtpPerformanceMode::kHtpBurst:
       dcvs_v3.setSleepLatency = 1;  // true
       dcvs_v3.sleepLatency = kSleepMinLatency;
+      dcvs_v3.dcvsEnable = kDcvsDisable;
       dcvs_v3.setBusParams = 1;
       dcvs_v3.busVoltageCornerMin = DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER;
       dcvs_v3.busVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER;
@@ -684,6 +778,7 @@ Status QnnBackendManager::SetHtpPowerConfig() {
     case HtpPerformanceMode::kHtpHighPerformance:
       dcvs_v3.setSleepLatency = 1;  // true
       dcvs_v3.sleepLatency = kSleepLowLatency;
+      dcvs_v3.dcvsEnable = kDcvsDisable;
       dcvs_v3.setBusParams = 1;
       dcvs_v3.busVoltageCornerMin = DCVS_VOLTAGE_VCORNER_TURBO;
       dcvs_v3.busVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_TURBO;
@@ -693,9 +788,49 @@ Status QnnBackendManager::SetHtpPowerConfig() {
       dcvs_v3.coreVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_TURBO;
       dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_TURBO;
       break;
+    case HtpPerformanceMode::kHtpBalanced:
+      dcvs_v3.setSleepLatency = 1;  // true
+      dcvs_v3.sleepLatency = kSleepMediumLatency;
+      dcvs_v3.dcvsEnable = kDcvsEnable;
+      dcvs_v3.setBusParams = 1;
+      dcvs_v3.busVoltageCornerMin = DCVS_VOLTAGE_VCORNER_NOM_PLUS;
+      dcvs_v3.busVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_NOM_PLUS;
+      dcvs_v3.busVoltageCornerMax = DCVS_VOLTAGE_VCORNER_NOM_PLUS;
+      dcvs_v3.setCoreParams = 1;
+      dcvs_v3.coreVoltageCornerMin = DCVS_VOLTAGE_VCORNER_NOM_PLUS;
+      dcvs_v3.coreVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_NOM_PLUS;
+      dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_NOM_PLUS;
+      break;
+    case HtpPerformanceMode::kHtpLowBalanced:
+      dcvs_v3.setSleepLatency = 1;  // true
+      dcvs_v3.sleepLatency = kSleepMediumLatency;
+      dcvs_v3.dcvsEnable = kDcvsEnable;
+      dcvs_v3.setBusParams = 1;
+      dcvs_v3.busVoltageCornerMin = DCVS_VOLTAGE_VCORNER_NOM;
+      dcvs_v3.busVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_NOM;
+      dcvs_v3.busVoltageCornerMax = DCVS_VOLTAGE_VCORNER_NOM;
+      dcvs_v3.setCoreParams = 1;
+      dcvs_v3.coreVoltageCornerMin = DCVS_VOLTAGE_VCORNER_NOM;
+      dcvs_v3.coreVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_NOM;
+      dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_NOM;
+      break;
+    case HtpPerformanceMode::kHtpHighPowerSaver:
+      dcvs_v3.setSleepLatency = 1;  // true
+      dcvs_v3.sleepLatency = kSleepMediumLatency;
+      dcvs_v3.dcvsEnable = kDcvsEnable;
+      dcvs_v3.setBusParams = 1;
+      dcvs_v3.busVoltageCornerMin = DCVS_VOLTAGE_VCORNER_SVS_PLUS;
+      dcvs_v3.busVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_SVS_PLUS;
+      dcvs_v3.busVoltageCornerMax = DCVS_VOLTAGE_VCORNER_SVS_PLUS;
+      dcvs_v3.setCoreParams = 1;
+      dcvs_v3.coreVoltageCornerMin = DCVS_VOLTAGE_VCORNER_SVS_PLUS;
+      dcvs_v3.coreVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_SVS_PLUS;
+      dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_SVS_PLUS;
+      break;
     case HtpPerformanceMode::kHtpPowerSaver:
       dcvs_v3.setSleepLatency = 1;  // true
       dcvs_v3.sleepLatency = kSleepMediumLatency;
+      dcvs_v3.dcvsEnable = kDcvsEnable;
       dcvs_v3.setBusParams = 1;
       dcvs_v3.busVoltageCornerMin = DCVS_VOLTAGE_VCORNER_SVS;
       dcvs_v3.busVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_SVS;
@@ -708,6 +843,7 @@ Status QnnBackendManager::SetHtpPowerConfig() {
     case HtpPerformanceMode::kHtpLowPowerSaver:
       dcvs_v3.setSleepLatency = 1;  // true
       dcvs_v3.sleepLatency = kSleepMediumLatency;
+      dcvs_v3.dcvsEnable = kDcvsEnable;
       dcvs_v3.setBusParams = 1;
       dcvs_v3.busVoltageCornerMin = DCVS_VOLTAGE_VCORNER_SVS2;
       dcvs_v3.busVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_SVS2;
@@ -717,21 +853,11 @@ Status QnnBackendManager::SetHtpPowerConfig() {
       dcvs_v3.coreVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_SVS2;
       dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_SVS2;
       break;
-    case HtpPerformanceMode::kHtpHighPowerSaver:
-      dcvs_v3.setSleepLatency = 1;  // true
-      dcvs_v3.sleepLatency = kSleepMediumLatency;
-      dcvs_v3.setBusParams = 1;
-      dcvs_v3.busVoltageCornerMin = DCVS_VOLTAGE_VCORNER_SVS_PLUS;
-      dcvs_v3.busVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_SVS_PLUS;
-      dcvs_v3.busVoltageCornerMax = DCVS_VOLTAGE_VCORNER_SVS_PLUS;
-      dcvs_v3.setCoreParams = 1;
-      dcvs_v3.coreVoltageCornerMin = DCVS_VOLTAGE_VCORNER_SVS_PLUS;
-      dcvs_v3.coreVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_SVS_PLUS;
-      dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_SVS_PLUS;
-      break;
     case HtpPerformanceMode::kHtpExtremePowerSaver:
+      dcvs_v3.powerMode = QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_POWER_SAVER_MODE;
       dcvs_v3.setSleepLatency = 1;  // true
       dcvs_v3.sleepLatency = kSleepMediumLatency;
+      dcvs_v3.dcvsEnable = kDcvsEnable;
       dcvs_v3.setBusParams = 1;
       dcvs_v3.busVoltageCornerMin = DCVS_VOLTAGE_CORNER_DISABLE;
       dcvs_v3.busVoltageCornerTarget = DCVS_VOLTAGE_CORNER_DISABLE;
@@ -741,50 +867,41 @@ Status QnnBackendManager::SetHtpPowerConfig() {
       dcvs_v3.coreVoltageCornerTarget = DCVS_VOLTAGE_CORNER_DISABLE;
       dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_CORNER_DISABLE;
       break;
-    case HtpPerformanceMode::kHtpLowBalanced:
-      dcvs_v3.setSleepLatency = 1;  // true
-      dcvs_v3.sleepLatency = kSleepMediumLatency;
-      dcvs_v3.setBusParams = 1;
-      dcvs_v3.busVoltageCornerMin = DCVS_VOLTAGE_VCORNER_NOM;
-      dcvs_v3.busVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_NOM;
-      dcvs_v3.busVoltageCornerMax = DCVS_VOLTAGE_VCORNER_NOM;
-      dcvs_v3.setCoreParams = 1;
-      dcvs_v3.coreVoltageCornerMin = DCVS_VOLTAGE_VCORNER_NOM;
-      dcvs_v3.coreVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_NOM;
-      dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_NOM;
-      break;
-    case HtpPerformanceMode::kHtpBalanced:
-      dcvs_v3.setSleepLatency = 1;  // true
-      dcvs_v3.sleepLatency = kSleepMediumLatency;
-      dcvs_v3.setBusParams = 1;
-      dcvs_v3.busVoltageCornerMin = DCVS_VOLTAGE_VCORNER_NOM_PLUS;
-      dcvs_v3.busVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_NOM_PLUS;
-      dcvs_v3.busVoltageCornerMax = DCVS_VOLTAGE_VCORNER_NOM_PLUS;
-      dcvs_v3.setCoreParams = 1;
-      dcvs_v3.coreVoltageCornerMin = DCVS_VOLTAGE_VCORNER_NOM_PLUS;
-      dcvs_v3.coreVoltageCornerTarget = DCVS_VOLTAGE_VCORNER_NOM_PLUS;
-      dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_NOM_PLUS;
-      break;
     default:
-      ORT_THROW("Invalid performance profile %d", static_cast<int>(htp_performance_mode_));
+      ORT_THROW("Invalid performance profile %d", static_cast<int>(htp_performance_mode));
       break;
   }
   std::vector<const QnnHtpPerfInfrastructure_PowerConfig_t*> perf_power_configs_ptr = ObtainNullTermPtrVector(power_configs);
-  status = htp_perf_infra.setPowerConfig(htp_power_config_client_id_, perf_power_configs_ptr.data());
+  status = htp_perf_infra.setPowerConfig(htp_power_config_client_id, perf_power_configs_ptr.data());
   ORT_RETURN_IF(QNN_SUCCESS != status, "setPowerConfig failed for HTP performance mode.");
 
-  // Set rpc control latency here, but note that v68 doesn't support rpc polling mode.
-  if (rpc_control_latency_ != 0) {
+  return Status::OK();
+}
+
+Status QnnBackendManager::SetRpcControlLatency(uint32_t htp_power_config_client_id,
+                                               uint32_t rpc_control_latency) {
+  if (rpc_control_latency != 0) {
+    QnnDevice_Infrastructure_t qnn_device_infra = nullptr;
+    auto status = qnn_interface_.deviceGetInfrastructure(&qnn_device_infra);
+    ORT_RETURN_IF(QNN_SUCCESS != status, "backendGetPerfInfrastructure failed.");
+
+    auto* htp_infra = static_cast<QnnHtpDevice_Infrastructure_t*>(qnn_device_infra);
+    ORT_RETURN_IF(QNN_HTP_DEVICE_INFRASTRUCTURE_TYPE_PERF != htp_infra->infraType,
+                  "HTP infra type = ", htp_infra->infraType, ", which is not perf infra type.");
+    QnnHtpDevice_PerfInfrastructure_t& htp_perf_infra = htp_infra->perfInfra;
+
+    // Set rpc control latency here, but note that v68 doesn't support rpc polling mode.
     constexpr int kNumRpcPollingPowerConfigs = 2;
     std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> rpc_power_configs(kNumRpcPollingPowerConfigs);
-    QnnHtpPerfInfrastructure_PowerConfig_t& rpc_control_latency = rpc_power_configs[0];
+    QnnHtpPerfInfrastructure_PowerConfig_t& rpc_control_latency_cfg = rpc_power_configs[0];
     // v68 doesn't support this.
     QnnHtpPerfInfrastructure_PowerConfig_t& rpc_polling_time = rpc_power_configs[1];
-    rpc_control_latency.option = QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_RPC_CONTROL_LATENCY;
+    rpc_control_latency_cfg.option = QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_RPC_CONTROL_LATENCY;
     rpc_polling_time.option = QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_RPC_POLLING_TIME;
-    rpc_control_latency.rpcControlLatencyConfig = rpc_control_latency_;
-    perf_power_configs_ptr = ObtainNullTermPtrVector(rpc_power_configs);
-    status = htp_perf_infra.setPowerConfig(htp_power_config_client_id_, perf_power_configs_ptr.data());
+    rpc_control_latency_cfg.rpcControlLatencyConfig = rpc_control_latency;
+    std::vector<const QnnHtpPerfInfrastructure_PowerConfig_t*> perf_power_configs_ptr =
+        ObtainNullTermPtrVector(rpc_power_configs);
+    status = htp_perf_infra.setPowerConfig(htp_power_config_client_id, perf_power_configs_ptr.data());
     ORT_RETURN_IF(QNN_SUCCESS != status, "setPowerConfig failed for RPC control latency.");
   }
 
@@ -805,11 +922,7 @@ void QnnBackendManager::Split(std::vector<std::string>& split_string,
   }
 }
 
-Status QnnBackendManager::DestroyHTPPowerConfigID() {
-  if (htp_performance_mode_ == HtpPerformanceMode::kHtpDefault) {
-    return Status::OK();
-  }
-
+Status QnnBackendManager::DestroyHTPPowerConfigID(uint32_t htp_power_config_id) {
   QnnDevice_Infrastructure_t qnn_device_infra = nullptr;
   auto status = qnn_interface_.deviceGetInfrastructure(&qnn_device_infra);
   ORT_RETURN_IF(QNN_SUCCESS != status, "backendGetPerfInfrastructure failed.");
@@ -819,7 +932,7 @@ Status QnnBackendManager::DestroyHTPPowerConfigID() {
                 "HTP infra type = ", htp_infra->infraType, ", which is not perf infra type.");
   QnnHtpDevice_PerfInfrastructure_t& htp_perf_infra = htp_infra->perfInfra;
 
-  Qnn_ErrorHandle_t destroy_ret = htp_perf_infra.destroyPowerConfigId(htp_power_config_client_id_);
+  Qnn_ErrorHandle_t destroy_ret = htp_perf_infra.destroyPowerConfigId(htp_power_config_id);
   ORT_RETURN_IF(QNN_SUCCESS != destroy_ret, "destroyPowerConfigId failed.");
   return Status::OK();
 }
@@ -829,12 +942,7 @@ void QnnBackendManager::ReleaseResources() {
     return;
   }
 
-  auto result = DestroyHTPPowerConfigID();
-  if (Status::OK() != result) {
-    ORT_THROW("Failed to DestroyHTPPowerConfigID.");
-  }
-
-  result = ReleaseContext();
+  auto result = ReleaseContext();
   if (Status::OK() != result) {
     ORT_THROW("Failed to ReleaseContext.");
   }
@@ -872,9 +980,36 @@ void QnnBackendManager::ReleaseResources() {
 }
 
 Status QnnBackendManager::ExtractBackendProfilingInfo() {
-  if (ProfilingLevel::OFF == profiling_level_ || ProfilingLevel::INVALID == profiling_level_) {
+  if (ProfilingLevel::OFF == profiling_level_merge_ || ProfilingLevel::INVALID == profiling_level_merge_) {
     return Status::OK();
   }
+
+  bool tracelogging_provider_ep_enabled = false;
+  const Env& env = Env::Default();
+  auto& provider = env.GetTelemetryProvider();
+  auto level = provider.Level();
+  if (provider.IsEnabled()) {
+    auto keyword = provider.Keyword();
+    if ((keyword & static_cast<uint64_t>(onnxruntime::logging::ORTTraceLoggingKeyword::Profiling)) != 0 && level >= 5) {
+      tracelogging_provider_ep_enabled = true;
+    }
+  }
+
+  // ETW disabled previously, but enabled now
+  if (ProfilingLevel::INVALID == profiling_level_etw_ && tracelogging_provider_ep_enabled) {
+    LOGS(*logger_, ERROR) << "ETW disabled previously, but enabled now. Can't do the switch! Won't output any profiling.";
+    return Status::OK();
+  }
+
+  // ETW enabled previously, but disabled now
+  if (ProfilingLevel::INVALID != profiling_level_etw_ && !tracelogging_provider_ep_enabled) {
+    LOGS(*logger_, ERROR) << "ETW enabled previously, but disabled now. Can't do the switch! Won't output any profiling.";
+    return Status::OK();
+  }
+
+  ORT_RETURN_IF(!tracelogging_provider_ep_enabled && profiling_file_path_.empty(),
+                "Need to specify a cvs file via provider option profiling_file_path if ETW not enabled.");
+
   ORT_RETURN_IF(nullptr == profile_backend_handle_, "Backend profile handle not valid.");
 
   const QnnProfile_EventId_t* profile_events{nullptr};
@@ -889,32 +1024,22 @@ Status QnnBackendManager::ExtractBackendProfilingInfo() {
     Qnn_ErrorHandle_t resultPropertyHasCapability =
         qnn_interface_.propertyHasCapability(QNN_PROPERTY_PROFILE_SUPPORTS_EXTENDED_EVENT);
     uint16_t errorCodePropertyHasCapability = static_cast<uint16_t>(resultPropertyHasCapability & 0xFFFF);
-    if (errorCodePropertyHasCapability == QNN_PROFILE_NO_ERROR) {
+    if (errorCodePropertyHasCapability == QNN_PROPERTY_SUPPORTED) {
       LOGS(*logger_, VERBOSE) << "The QNN backend supports extended event data.";
       backendSupportsExtendedEventData = true;
     } else {
       LOGS(*logger_, VERBOSE) << "The QNN backend does not support extended event data.";
     }
 
-    bool tracelogging_provider_ep_enabled = false;
-    const Env& env = Env::Default();
-    auto& provider = env.GetTelemetryProvider();
-    if (provider.IsEnabled()) {
-      auto keyword = provider.Keyword();
-      if ((keyword & static_cast<uint64_t>(onnxruntime::logging::ORTTraceLoggingKeyword::Profiling)) != 0) {
-        tracelogging_provider_ep_enabled = true;
-      }
-    }
     std::ofstream outfile;
     if (!tracelogging_provider_ep_enabled) {
       // Write to CSV in append mode
-      const char* profilingCsvFilename = "qnn-profiling-data.csv";
-      std::ifstream infile(profilingCsvFilename);
+      std::ifstream infile(profiling_file_path_.c_str());
       bool exists = infile.good();
       infile.close();
 
-      outfile.open(profilingCsvFilename, std::ios_base::app);
-      ORT_RETURN_IF(!outfile.is_open(), "Failed to open qnn-profiling-data.csv");
+      outfile.open(profiling_file_path_, std::ios_base::app);
+      ORT_RETURN_IF(!outfile.is_open(), "Failed to open profiling file: ", profiling_file_path_);
       // If file didn't exist before, write the header
       if (!exists) {
         outfile << "Msg Timestamp,Message,Time,Unit of Measurement,Timing Source,Event Level,Event Identifier\n";
@@ -1035,6 +1160,7 @@ Status QnnBackendManager::ExtractProfilingEventExtended(
   QnnProfile_Error_t errorCode = static_cast<QnnProfile_Error_t>(resultGetExtendedEventData & 0xFFFF);
   ORT_RETURN_IF(QNN_PROFILE_NO_ERROR != errorCode, "Failed to get profile event data: " + std::string(QnnProfileErrorToString(errorCode)));
 
+  // need to check the version first
   std::string message = GetEventTypeString(event_data_extended.v1.type);
   std::string unit = GetUnitString(event_data_extended.v1.unit);
 
@@ -1043,16 +1169,17 @@ Status QnnBackendManager::ExtractProfilingEventExtended(
 #endif
 
   if (!tracelogging_provider_ep_enabled) {
-    if (event_data_extended.version == QNN_PROFILE_DATA_VERSION_1) {
-      outfile << event_data_extended.v1.timestamp << ","
-              << message << ","
-              << ExtractQnnScalarValue(event_data_extended.v1.value) << ","
-              << unit << ","
-              << "BACKEND"
-              << ","
-              << eventLevel << ","
-              << (event_data_extended.v1.identifier ? event_data_extended.v1.identifier : "NULL") << "\n";
-    }
+    // QNN issue, the version number not correct, ticket created
+    // if (event_data_extended.version == QNN_PROFILE_DATA_VERSION_1) {
+    outfile << event_data_extended.v1.timestamp << ","
+            << message << ","
+            << ExtractQnnScalarValue(event_data_extended.v1.value) << ","
+            << unit << ","
+            << "BACKEND"
+            << ","
+            << eventLevel << ","
+            << (event_data_extended.v1.identifier ? event_data_extended.v1.identifier : "NULL") << "\n";
+    //}
   } else {
 #ifdef _WIN32
     LogQnnProfileEventAsTraceLogging(
@@ -1233,8 +1360,24 @@ void* QnnBackendManager::LoadLib(const char* file_name, int flags, std::string& 
     return nullptr;
   }
 
-  // search from system lib path first
-  HMODULE mod = LoadLibraryExA(file_name, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+  HMODULE mod;
+  auto file_path = std::filesystem::path(file_name);
+  if (!file_path.is_absolute()) {
+    // construct an absolute path from ORT runtime path + file_name and check whether it exists.
+    auto pathstring = Env::Default().GetRuntimePath() + ToPathString(file_name);
+    auto absolute_path = pathstring.c_str();
+    if (std::filesystem::exists(std::filesystem::path(absolute_path))) {
+      // load library from absolute path and search for dependencies there.
+      mod = LoadLibraryExW(absolute_path, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+    } else {
+      // use default dll search order for file_name.
+      mod = LoadLibraryExA(file_name, nullptr, 0);
+    }
+  } else {
+    // file_name represents an absolute path.
+    // load library from absolute path and search for dependencies there.
+    mod = LoadLibraryExA(file_name, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+  }
   if (!mod) {
     error_msg = "load library failed";
     return nullptr;

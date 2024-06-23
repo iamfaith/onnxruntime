@@ -2,12 +2,14 @@
 // Licensed under the MIT License.
 
 #pragma once
+#include <atomic>
+#include <vector>
+
 #include "core/platform/telemetry.h"
 #include <Windows.h>
 #include <TraceLoggingProvider.h>
 #include "core/platform/ort_mutex.h"
 #include "core/platform/windows/TraceLoggingConfig.h"
-#include <atomic>
 
 namespace onnxruntime {
 
@@ -49,7 +51,7 @@ class WindowsTelemetry : public Telemetry {
                           const std::string& model_graph_name,
                           const std::unordered_map<std::string, std::string>& model_metadata,
                           const std::string& loadedFrom, const std::vector<std::string>& execution_provider_ids,
-                          bool use_fp16) const override;
+                          bool use_fp16, bool captureState) const override;
 
   void LogRuntimeError(uint32_t session_id, const common::Status& status, const char* file,
                        const char* function, uint32_t line) const override;
@@ -58,15 +60,28 @@ class WindowsTelemetry : public Telemetry {
 
   void LogExecutionProviderEvent(LUID* adapterLuid) const override;
 
+  using EtwInternalCallback = std::function<void(LPCGUID SourceId, ULONG IsEnabled, UCHAR Level,
+                                                 ULONGLONG MatchAnyKeyword, ULONGLONG MatchAllKeyword,
+                                                 PEVENT_FILTER_DESCRIPTOR FilterData, PVOID CallbackContext)>;
+
+  static void RegisterInternalCallback(const EtwInternalCallback& callback);
+
+  static void UnregisterInternalCallback(const EtwInternalCallback& callback);
+
  private:
   static OrtMutex mutex_;
   static uint32_t global_register_count_;
   static bool enabled_;
   static uint32_t projection_;
 
+  static std::vector<const EtwInternalCallback*> callbacks_;
+  static OrtMutex callbacks_mutex_;
   static OrtMutex provider_change_mutex_;
   static UCHAR level_;
   static ULONGLONG keyword_;
+
+  static void InvokeCallbacks(LPCGUID SourceId, ULONG IsEnabled, UCHAR Level, ULONGLONG MatchAnyKeyword,
+                              ULONGLONG MatchAllKeyword, PEVENT_FILTER_DESCRIPTOR FilterData, PVOID CallbackContext);
 
   static void NTAPI ORT_TL_EtwEnableCallback(
       _In_ LPCGUID SourceId,

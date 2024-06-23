@@ -32,18 +32,18 @@ class QnnModel;
 class QnnBackendManager {
  public:
   QnnBackendManager(std::string&& backend_path,
+                    ProfilingLevel profiling_level_etw,
                     ProfilingLevel profiling_level,
-                    uint32_t rpc_control_latency,
-                    HtpPerformanceMode htp_performance_mode,
+                    std::string&& profiling_file_path,
                     ContextPriority context_priority,
                     std::string&& qnn_saver_path,
                     uint32_t device_id,
                     QnnHtpDevice_Arch_t htp_arch,
                     uint32_t soc_model)
       : backend_path_(backend_path),
+        profiling_level_etw_(profiling_level_etw),
         profiling_level_(profiling_level),
-        rpc_control_latency_(rpc_control_latency),
-        htp_performance_mode_(htp_performance_mode),
+        profiling_file_path_(profiling_file_path),
         context_priority_(context_priority),
         qnn_saver_path_(qnn_saver_path),
         device_id_(device_id),
@@ -88,15 +88,25 @@ class QnnBackendManager {
   std::unique_ptr<unsigned char[]> GetContextBinaryBuffer(uint64_t& written_buffer_size);
 
   Status LoadCachedQnnContextFromBuffer(char* buffer, uint64_t buffer_length,
+                                        std::string node_name,
                                         std::unordered_map<std::string, std::unique_ptr<qnn::QnnModel>>& qnn_models);
 
   Status SetupBackend(const logging::Logger& logger, bool load_from_cached_context);
 
-  Status SetHtpPowerConfig();
+  Status CreateHtpPowerCfgId(uint32_t deviceId, uint32_t coreId, uint32_t& htp_power_config_id);
+
+  Status SetHtpPowerConfig(uint32_t htp_power_config_client_id,
+                           HtpPerformanceMode htp_performance_mode);
+
+  Status SetRpcControlLatency(uint32_t htp_power_config_client_id,
+                              uint32_t rpc_control_latency);
 
   const QNN_INTERFACE_VER_TYPE& GetQnnInterface() { return qnn_interface_; }
 
-  const Qnn_ContextHandle_t& GetQnnContext() { return context_; }
+  const Qnn_ContextHandle_t& GetQnnContext(int index = 0) {
+    ORT_ENFORCE((contexts_.size() > 0) && (static_cast<size_t>(index) < contexts_.size()), "No valid QNN context!");
+    return contexts_[index];
+  }
 
   const Qnn_BackendHandle_t& GetQnnBackendHandle() { return backend_handle_; }
 
@@ -105,11 +115,15 @@ class QnnBackendManager {
   void SetLogger(const logging::Logger* logger) {
     if (logger_ == nullptr) {
       logger_ = logger;
-      InitializeQnnLog();
+      (void)InitializeQnnLog();
     }
   }
 
-  void InitializeQnnLog();
+  Status InitializeQnnLog();
+
+  Status UpdateQnnLogLevel(logging::Severity ort_log_level);
+
+  Status ResetQnnLogLevel();
 
   // Terminate logging in the backend
   Status TerminateQnnLog() {
@@ -136,10 +150,14 @@ class QnnBackendManager {
                                std::ofstream& outfile, bool backendSupportsExtendedEventData,
                                bool tracelogging_provider_ep_enabled);
 
+  Status SetProfilingLevelETW(ProfilingLevel profiling_level_etw_param);
+
   void SetQnnBackendType(uint32_t backend_id);
   QnnBackendType GetQnnBackendType() { return qnn_backend_type_; }
 
   const std::string& GetSdkVersion() { return sdk_build_version_; }
+
+  Status DestroyHTPPowerConfigID(uint32_t htp_power_config_id);
 
  private:
   void* LoadLib(const char* file_name, int flags, std::string& error_msg);
@@ -149,8 +167,6 @@ class QnnBackendManager {
   Status LoadQnnSaverBackend();
 
   Status UnloadLib(void* handle);
-
-  Status DestroyHTPPowerConfigID();
 
   void* LibFunction(void* handle, const char* symbol, std::string& error_msg);
 
@@ -200,6 +216,7 @@ class QnnBackendManager {
   static const std::string GetEventTypeString(QnnProfile_EventType_t eventType);
   static const std::string ExtractQnnScalarValue(const Qnn_Scalar_t& scalar);
   const char* QnnProfileErrorToString(QnnProfile_Error_t error);
+  QnnLog_Level_t MapOrtSeverityToQNNLogLevel(logging::Severity ort_log_level);
 #ifdef _WIN32
   void LogQnnProfileEventAsTraceLogging(
       uint64_t timestamp,
@@ -222,8 +239,11 @@ class QnnBackendManager {
   QnnBackend_Config_t** backend_config_ = nullptr;
   Qnn_LogHandle_t log_handle_ = nullptr;
   Qnn_DeviceHandle_t device_handle_ = nullptr;
-  Qnn_ContextHandle_t context_ = nullptr;
+  std::vector<Qnn_ContextHandle_t> contexts_;
+  ProfilingLevel profiling_level_etw_;
   ProfilingLevel profiling_level_;
+  ProfilingLevel profiling_level_merge_;
+  const std::string profiling_file_path_;
   bool backend_initialized_ = false;
   bool device_created_ = false;
   bool context_created_ = false;
@@ -232,15 +252,12 @@ class QnnBackendManager {
   QnnBackendType qnn_backend_type_ = QnnBackendType::CPU;
   Qnn_ProfileHandle_t profile_backend_handle_ = nullptr;
   std::vector<std::string> op_package_paths_;
-  uint32_t rpc_control_latency_ = 0;
-  HtpPerformanceMode htp_performance_mode_;
   ContextPriority context_priority_;
   std::string sdk_build_version_ = "";
 #ifdef _WIN32
   std::set<HMODULE> mod_handles_;
 #endif
   const std::string qnn_saver_path_;
-  uint32_t htp_power_config_client_id_ = 0;
   uint32_t device_id_ = 0;
   QnnHtpDevice_Arch_t htp_arch_ = QNN_HTP_DEVICE_ARCH_NONE;
   uint32_t soc_model_ = QNN_SOC_MODEL_UNKNOWN;

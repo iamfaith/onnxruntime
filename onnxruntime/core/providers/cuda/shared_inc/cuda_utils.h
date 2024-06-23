@@ -168,5 +168,42 @@ struct NumericLimits<double> {
   }
 };
 
+// TODO Where to put this? good places might be
+// core/framework/tensor_shape.h
+// core/util/matrix_layout.h
+
+constexpr bool LAYOUT_NCHW = false;
+constexpr bool LAYOUT_NHWC = true;
+
+template <bool IsNHWC>
+struct Channels;
+
+template <>
+struct Channels<LAYOUT_NHWC> {
+  static constexpr size_t N = 0;
+  static constexpr size_t H = 1;
+  static constexpr size_t W = 2;
+  static constexpr size_t C = 3;
+};
+
+template <>
+struct Channels<LAYOUT_NCHW> {
+  static constexpr size_t N = 0;
+  static constexpr size_t C = 1;
+  static constexpr size_t H = 2;
+  static constexpr size_t W = 3;
+};
+
+// Calculates ceil(a / b). User must be careful to ensure that there
+// is no overflow or underflow in the calculation.
+template <typename T>
+constexpr T divUp(T a, T b) { return (a + b - (T)1) / b; }
+
+// Rounds a up to the next highest multiple of b. User must be careful
+// to ensure that there is no overflow or underflow in the calculation
+// of divUp.
+template <typename T>
+constexpr T roundUp(T a, T b) { return divUp<T>(a, b) * b; }
+
 }  // namespace cuda
 }  // namespace onnxruntime

@@ -21,7 +21,6 @@
 #include "core/framework/kernel_registry.h"
 #include "core/graph/function_utils.h"
 #include "core/graph/indexed_sub_graph.h"
-#include "core/providers/shared/node_unit/node_unit.h"
 #include "data_transfer.h"
 
 namespace onnxruntime {
@@ -239,6 +238,11 @@ class ONNX_OPERATOR_KERNEL_CLASS_NAME(kJsExecutionProvider, kOnnxDomain, 16, Whe
 
 class ONNX_OPERATOR_VERSIONED_KERNEL_CLASS_NAME(kJsExecutionProvider, kOnnxDomain, 1, 12, Transpose);
 class ONNX_OPERATOR_KERNEL_CLASS_NAME(kJsExecutionProvider, kOnnxDomain, 13, Transpose);
+
+class ONNX_OPERATOR_VERSIONED_KERNEL_CLASS_NAME(kJsExecutionProvider, kOnnxDomain, 11, 12, DepthToSpace);
+class ONNX_OPERATOR_KERNEL_CLASS_NAME(kJsExecutionProvider, kOnnxDomain, 13, DepthToSpace);
+class ONNX_OPERATOR_VERSIONED_KERNEL_CLASS_NAME(kJsExecutionProvider, kMSInternalNHWCDomain, 11, 12, DepthToSpace);
+class ONNX_OPERATOR_KERNEL_CLASS_NAME(kJsExecutionProvider, kMSInternalNHWCDomain, 13, DepthToSpace);
 
 class ONNX_OPERATOR_VERSIONED_KERNEL_CLASS_NAME(kJsExecutionProvider, kOnnxDomain, 1, 10, Conv);
 class ONNX_OPERATOR_KERNEL_CLASS_NAME(kJsExecutionProvider, kOnnxDomain, 11, Conv);
@@ -535,6 +539,11 @@ std::unique_ptr<KernelRegistry> RegisterKernels() {
       BuildKernelCreateInfo<ONNX_OPERATOR_VERSIONED_KERNEL_CLASS_NAME(kJsExecutionProvider, kOnnxDomain, 1, 12, Transpose)>,
       BuildKernelCreateInfo<ONNX_OPERATOR_KERNEL_CLASS_NAME(kJsExecutionProvider, kOnnxDomain, 13, Transpose)>,
 
+      BuildKernelCreateInfo<ONNX_OPERATOR_VERSIONED_KERNEL_CLASS_NAME(kJsExecutionProvider, kOnnxDomain, 11, 12, DepthToSpace)>,
+      BuildKernelCreateInfo<ONNX_OPERATOR_KERNEL_CLASS_NAME(kJsExecutionProvider, kOnnxDomain, 13, DepthToSpace)>,
+      BuildKernelCreateInfo<ONNX_OPERATOR_VERSIONED_KERNEL_CLASS_NAME(kJsExecutionProvider, kMSInternalNHWCDomain, 11, 12, DepthToSpace)>,
+      BuildKernelCreateInfo<ONNX_OPERATOR_KERNEL_CLASS_NAME(kJsExecutionProvider, kMSInternalNHWCDomain, 13, DepthToSpace)>,
+
       BuildKernelCreateInfo<ONNX_OPERATOR_VERSIONED_KERNEL_CLASS_NAME(kJsExecutionProvider, kOnnxDomain, 1, 10, Conv)>,
       BuildKernelCreateInfo<ONNX_OPERATOR_KERNEL_CLASS_NAME(kJsExecutionProvider, kOnnxDomain, 11, Conv)>,
       BuildKernelCreateInfo<ONNX_OPERATOR_VERSIONED_KERNEL_CLASS_NAME(kJsExecutionProvider, kMSInternalNHWCDomain, 1, 10, Conv)>,
@@ -756,16 +765,16 @@ std::unique_ptr<onnxruntime::IDataTransfer> JsExecutionProvider::GetDataTransfer
 JsExecutionProvider::~JsExecutionProvider() {
 }
 
-Status JsExecutionProvider::OnRunStart() {
-  if (IsGraphCaptureEnabled() && IsGraphCaptureAllowed() && !IsGraphCaptured()) {
+Status JsExecutionProvider::OnRunStart(const onnxruntime::RunOptions& /*run_options*/) {
+  if (IsGraphCaptureEnabled() && IsGraphCaptureAllowed() && !IsGraphCaptured(0)) {
     LOGS(*GetLogger(), INFO) << "Capturing the webgpu graph for this model";
     EM_ASM({ Module.jsepCaptureBegin(); });
   }
   return Status::OK();
 }
 
-Status JsExecutionProvider::OnRunEnd(bool sync_stream) {
-  if (IsGraphCaptureEnabled() && !IsGraphCaptured()) {
+Status JsExecutionProvider::OnRunEnd(bool sync_stream, const onnxruntime::RunOptions& /*run_options*/) {
+  if (IsGraphCaptureEnabled() && !IsGraphCaptured(0)) {
     if (IsGraphCaptureAllowed()) {
       EM_ASM({ Module.jsepCaptureEnd(); });
       is_graph_captured_ = true;
@@ -781,12 +790,12 @@ bool JsExecutionProvider::IsGraphCaptureEnabled() const {
   return enable_graph_capture_;
 }
 
-bool JsExecutionProvider::IsGraphCaptured() const {
+bool JsExecutionProvider::IsGraphCaptured(int) const {
   return is_graph_captured_;
 }
 
-Status JsExecutionProvider::ReplayGraph() {
-  ORT_ENFORCE(IsGraphCaptured());
+Status JsExecutionProvider::ReplayGraph(int) {
+  ORT_ENFORCE(IsGraphCaptured(0));
   EM_ASM({ Module.jsepReplay(); });
   return Status::OK();
 }
